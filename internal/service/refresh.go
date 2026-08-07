@@ -86,7 +86,7 @@ func (s *AuthService) RotateRefresh(c *gin.Context, user *model.User, old *model
 	if err != nil {
 		return err
 	}
-	refreshToken, err := s.Signer.Sign(user.ID.Hex(), "refresh", s.Config.JWT.RefreshTTL, nil)
+	refreshToken, err := s.Signer.Sign(user.ID.Hex(), "refresh", s.Config.JWT.RefreshTTL, map[string]string{"jti": auth.RandomHex(24)})
 	if err != nil {
 		return err
 	}

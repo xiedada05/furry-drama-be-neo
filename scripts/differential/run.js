@@ -54,8 +54,8 @@ async function send(base, step, jar, isFirst) {
   const headers = { ...(step.headers || {}) };
   headers['User-Agent'] = step.ua || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36';
   if (step.devToken !== false) headers['x-dev-token'] = DEV_TOKEN;
-  // CSRF：非 GET 且 jar 有 token 则带 X-XSRF-TOKEN
-  if (method !== 'GET' && jar.csrfToken()) headers['X-XSRF-TOKEN'] = jar.csrfToken();
+  // CSRF：非 GET 且 jar 有 token 且未显式指定则带 X-XSRF-TOKEN
+  if (method !== 'GET' && !headers['X-XSRF-TOKEN'] && jar.csrfToken()) headers['X-XSRF-TOKEN'] = jar.csrfToken();
   jar.apply(headers);
 
   const opts = { method, headers, redirect: 'manual' };
@@ -124,16 +124,38 @@ function compareStep(name, a, b) {
 }
 
 // ---------- main ----------
+// 场景模板变量：每次运行生成唯一值（保证两端各自注册新用户，场景幂等）。
+function expandBody(body, vars) {
+  if (body === null || typeof body !== 'object') return body;
+  const out = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (typeof v === 'string') {
+      out[k] = v.replace(/\{\{(\w+)\}\}/g, (m, name) => vars[name] !== undefined ? vars[name] : m);
+    } else if (typeof v === 'object') {
+      out[k] = expandBody(v, vars);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 async function run() {
   const data = JSON.parse(fs.readFileSync(SCENARIOS_FILE, 'utf8'));
   const scenarios = data.scenarios;
   for (const sc of scenarios) {
+    const stamp = Date.now().toString(36);
+    const vars = {
+      uniqueEmail: `diff_${stamp}@test.com`,
+      uniqueAccountId: `diff_${stamp}`,
+    };
     const jarA = new CookieJar();
     const jarB = new CookieJar();
     let ok = true;
     const detail = [];
     for (let i = 0; i < sc.steps.length; i++) {
-      const step = sc.steps[i];
+      const step = { ...sc.steps[i] };
+      if (step.body) step.body = expandBody(step.body, vars);
       let a, b;
       try { a = await send(OLD_BASE, step, jarA, i === 0); } catch (e) { a = { status: -1, body: null, rawBody: 'ERR ' + e.message, setCookie: [], headers: new Headers() }; }
       try { b = await send(NEO_BASE, step, jarB, i === 0); } catch (e) { b = { status: -1, body: null, rawBody: 'ERR ' + e.message, setCookie: [], headers: new Headers() }; }

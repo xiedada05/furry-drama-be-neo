@@ -1,65 +1,79 @@
 {
-  "_comment": "差分场景表。每个场景是若干步骤（多步支持注册→登录→refresh 等流程）。字段：method/path/headers/body/ua/devToken。run.js 用独立 cookie jar 逐步骤打两端比对。",
+  "_comment": "差分场景表。{{uniqueEmail}}/{{uniqueAccountId}} 会被 run.js 替换为本次运行的唯一值（保证两端各自注册新用户）。每个场景独立 cookie jar。SKIP_RATE_LIMIT=1 环境下 auth 限流跳过，避免场景间干扰。",
   "scenarios": [
-    {
-      "name": "health",
-      "steps": [
-        { "method": "GET", "path": "/api/health" }
-      ]
-    },
-    {
-      "name": "csrf-token",
-      "steps": [
-        { "method": "GET", "path": "/api/csrf-token" }
-      ]
-    },
-    {
-      "name": "captcha",
-      "steps": [
-        { "method": "GET", "path": "/api/auth/captcha" }
-      ]
-    },
-    {
-      "name": "check-accountId",
-      "steps": [
-        { "method": "GET", "path": "/api/auth/check-accountId?accountId=diff_user_probe" }
-      ]
-    },
-    {
-      "name": "me-unauth",
-      "steps": [
-        { "method": "GET", "path": "/api/auth/me", "devToken": false }
-      ]
-    },
-    {
-      "name": "login-no-altcha",
-      "steps": [
-        { "method": "POST", "path": "/api/auth/login", "body": { "email": "nobody@test.com", "password": "wrongpass1" } }
-      ]
-    },
-    {
-      "name": "register-invalid-email",
-      "steps": [
-        { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "abc", "username": "u", "email": "not-an-email", "password": "pass1234" } }
-      ]
-    },
-    {
-      "name": "v1-deprecation-headers",
-      "steps": [
-        { "method": "GET", "path": "/api/v1/health" }
-      ]
-    },
-    {
-      "name": "not-found-route",
-      "steps": [
-        { "method": "GET", "path": "/api/nonexistent-endpoint-xyz", "devToken": false }
-      ]
-    },
-    {
-      "name": "cors-denied",
-      "steps": [
-        { "method": "GET", "path": "/api/health", "headers": { "Origin": "http://evil.example.com" } }
-      ]
-    }
+    { "name": "health", "steps": [{ "method": "GET", "path": "/api/health" }] },
+    { "name": "csrf-token", "steps": [{ "method": "GET", "path": "/api/csrf-token" }] },
+    { "name": "captcha", "steps": [{ "method": "GET", "path": "/api/auth/captcha" }] },
+    { "name": "check-accountId", "steps": [{ "method": "GET", "path": "/api/auth/check-accountId?accountId=zzz_probe" }] },
+    { "name": "me-unauth", "steps": [{ "method": "GET", "path": "/api/auth/me", "devToken": false }] },
+    { "name": "login-no-altcha", "steps": [{ "method": "POST", "path": "/api/auth/login", "body": { "email": "nobody@test.com", "password": "wrongpass1" }, "devToken": false }] },
+    { "name": "register-invalid-email", "steps": [{ "method": "POST", "path": "/api/auth/register", "body": { "accountId": "abc", "username": "u", "email": "not-an-email", "password": "pass1234" } }] },
+    { "name": "register-invalid-accountid", "steps": [{ "method": "POST", "path": "/api/auth/register", "body": { "accountId": "a!", "username": "u", "email": "a@b.com", "password": "pass1234" } }] },
+    { "name": "register-short-password", "steps": [{ "method": "POST", "path": "/api/auth/register", "body": { "accountId": "abc", "username": "u", "email": "a@b.com", "password": "short1" } }] },
+    { "name": "register-demo-email", "steps": [{ "method": "POST", "path": "/api/auth/register", "body": { "accountId": "abc", "username": "u", "email": "demo@furry09.com", "password": "pass1234" } }] },
+    { "name": "register-success", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } }
+    ] },
+    { "name": "register-duplicate", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "u1", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "other", "username": "u2", "email": "{{uniqueEmail}}", "password": "pass1234" } }
+    ] },
+    { "name": "login-wrong-password", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "wrongpass1" } }
+    ] },
+    { "name": "login-and-me", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "GET", "path": "/api/auth/me" }
+    ] },
+    { "name": "refresh-rotate", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/refresh" }
+    ] },
+    { "name": "logout", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/logout" }
+    ] },
+    { "name": "change-password", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "PUT", "path": "/api/auth/change-password", "body": { "currentPassword": "pass1234", "newPassword": "newpass123" } }
+    ] },
+    { "name": "user-sessions", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/user-sessions/create", "body": { "screenWidth": 1920, "screenHeight": 1080, "language": "zh-CN" } },
+      { "method": "GET", "path": "/api/user-sessions/my" },
+      { "method": "POST", "path": "/api/user-sessions/heartbeat" }
+    ] },
+    { "name": "export-json", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "GET", "path": "/api/users/export-my-data" }
+    ] },
+    { "name": "export-csv", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "GET", "path": "/api/users/export-my-data?format=csv" }
+    ] },
+    { "name": "2fa-enable", "steps": [
+      { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "{{uniqueAccountId}}", "username": "diffuser", "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/auth/login", "body": { "email": "{{uniqueEmail}}", "password": "pass1234" } },
+      { "method": "POST", "path": "/api/2fa/enable" }
+    ] },
+    { "name": "csrf-mismatch", "steps": [
+      { "method": "GET", "path": "/api/csrf-token" },
+      { "method": "POST", "path": "/api/auth/login", "headers": { "X-XSRF-TOKEN": "deadbeef" }, "body": { "email": "a@b.com", "password": "x1234567" } }
+    ] },
+    { "name": "csrf-no-header", "steps": [
+      { "method": "GET", "path": "/api/csrf-token" },
+      { "method": "POST", "path": "/api/auth/login", "headers": { "X-XSRF-TOKEN": "" }, "body": { "email": "a@b.com", "password": "x1234567" } }
+    ] },
+    { "name": "v1-deprecation-headers", "steps": [{ "method": "GET", "path": "/api/v1/health" }] },
+    { "name": "not-found-route", "steps": [{ "method": "GET", "path": "/api/nonexistent-endpoint-xyz", "devToken": false }] },
+    { "name": "cors-denied", "steps": [{ "method": "GET", "path": "/api/health", "headers": { "Origin": "http://evil.example.com" } }] }
   ]
 }

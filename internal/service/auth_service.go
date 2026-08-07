@@ -149,7 +149,8 @@ func (s *AuthService) IssueSession(c *gin.Context, u *model.User, deviceInfo mod
 	if err != nil {
 		return err
 	}
-	refreshToken, err := s.Signer.Sign(u.ID.Hex(), "refresh", s.Config.JWT.RefreshTTL, nil)
+	// refresh 带随机 jti（对齐 helpers.js createRefreshToken），保证每次轮换生成唯一令牌。
+	refreshToken, err := s.Signer.Sign(u.ID.Hex(), "refresh", s.Config.JWT.RefreshTTL, map[string]string{"jti": auth.RandomHex(24)})
 	if err != nil {
 		return err
 	}

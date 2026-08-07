@@ -7,10 +7,12 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -91,4 +93,13 @@ func (s *Signer) Verify(tokenStr string) (*Claims, error) {
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
+}
+
+// RandomHex 生成 n 字节随机数的 hex 串（对齐 crypto.randomBytes(n).toString('hex')）。
+func RandomHex(n int) string {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		return strings.Repeat("0", n*2)
+	}
+	return hex.EncodeToString(buf)
 }
