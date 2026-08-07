@@ -26,9 +26,9 @@ func IsNotFound(err error) bool { return errors.Is(err, ErrNotFound) }
 
 // UserRepo 用户仓储。
 type UserRepo struct {
-	coll          *mongo.Collection
-	maxAttempts   int
-	lockMinutes   int
+	coll        *mongo.Collection
+	maxAttempts int
+	lockMinutes int
 }
 
 // NewUserRepo 构造用户仓储；maxAttempts/lockMinutes 为账号锁定策略
@@ -49,11 +49,11 @@ func (r *UserRepo) newCtx(parent context.Context) (context.Context, context.Canc
 
 // publicProjection 排除敏感字段（等价 mongoose select:false：password/2FA/锁定计数）。
 var publicProjection = bson.M{
-	"password":               0,
-	"twoFactorSecret":        0,
-	"twoFactorBackupCodes":   0,
-	"loginAttempts":          0,
-	"lockUntil":              0,
+	"password":             0,
+	"twoFactorSecret":      0,
+	"twoFactorBackupCodes": 0,
+	"loginAttempts":        0,
+	"lockUntil":            0,
 }
 
 // FindByEmail 按邮箱查找（不含敏感字段）。
@@ -63,11 +63,13 @@ func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, 
 	return r.findOne(ctx, bson.M{"email": email}, publicProjection)
 }
 
-// FindByEmailWithAuth 按邮箱查找，附带账号锁定字段（login 用）。
+// FindByEmailWithAuth 按邮箱查找，附带密码哈希与账号锁定字段（login 用）。
+// 对齐 Express 的 User.findOne({ email }).select('+loginAttempts +lockUntil')：
+// password 参与 schema 默认 select（非 select:false），故返回中保留 password 供 matchPassword 使用。
 func (r *UserRepo) FindByEmailWithAuth(ctx context.Context, email string) (*model.User, error) {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	return r.findOne(ctx, bson.M{"email": email}, bson.M{"password": 0, "twoFactorSecret": 0, "twoFactorBackupCodes": 0})
+	return r.findOne(ctx, bson.M{"email": email}, bson.M{"twoFactorSecret": 0, "twoFactorBackupCodes": 0})
 }
 
 // FindByEmailWith2FA 按邮箱查找，附带 2FA 敏感字段与锁定字段（login-2fa 用）。
@@ -165,8 +167,8 @@ func (r *UserRepo) IncLoginAttempts(ctx context.Context, id any) error {
 
 	// 先读当前锁定状态
 	var lock struct {
-		LockUntil   int64 `bson:"lockUntil"`
-		LoginAttempts int `bson:"loginAttempts"`
+		LockUntil     int64 `bson:"lockUntil"`
+		LoginAttempts int   `bson:"loginAttempts"`
 	}
 	err := r.coll.FindOne(ctx, bson.M{"_id": id},
 		options.FindOne().SetProjection(bson.M{"lockUntil": 1, "loginAttempts": 1})).Decode(&lock)
@@ -204,6 +206,185 @@ func (r *UserRepo) DeleteByID(ctx context.Context, id any) error {
 	defer cancel()
 	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
 	return err
+}
+
+// FindByIDWithAuth 按 ID 查找，附带密码哈希与账号锁定字段，排除 2FA 密文。
+// 对齐 Express 的 User.findById(id).select('+loginAttempts +lockUntil')
+// （change-password / verify-device / confirm-device-login / reset-password 使用点）。
+func (r *UserRepo) FindByIDWithAuth(ctx context.Context, id any) (*model.User, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	return r.findOne(ctx, bson.M{"_id": id}, bson.M{"twoFactorSecret": 0, "twoFactorBackupCodes": 0})
+}
+
+// FindByIDWithAllSecrets 按 ID 查找，返回全部字段（含 password / 2FA 密文 / 锁定字段）。
+// 对齐 Express 的 select('+twoFactorSecret +twoFactorBackupCodes')（twoFactor 路由使用点）。
+func (r *UserRepo) FindByIDWithAllSecrets(ctx context.Context, id any) (*model.User, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	return r.findOne(ctx, bson.M{"_id": id}, bson.M{})
+}
+
+// UpdateDeviceInfoAndLogin 更新登录后的设备信息与最近登录字段。
+// 对齐 Express login 成功 / confirm-device-login / login-2fa 的
+// user.deviceInfo = ...; user.lastLoginAt = ...; user.lastLoginIp = ...; user.lastLoginRegion = ...; user.save()。
+func (r *UserRepo) UpdateDeviceInfoAndLogin(ctx context.Context, id any, deviceInfo model.DeviceInfo, lastLoginAt time.Time, lastLoginIP, lastLoginRegion string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+		"deviceInfo":      deviceInfo,
+		"lastLoginAt":     lastLoginAt,
+		"lastLoginIp":     lastLoginIP,
+		"lastLoginRegion": lastLoginRegion,
+	}})
+	return err
+}
+
+// BackgroundPrefsPatch 背景偏好局部更新字段（nil 表示该字段不修改）。
+type BackgroundPrefsPatch struct {
+	Image   *string
+	Enabled *bool
+	Opacity *int
+	Blur    *int
+}
+
+// UpdateBackgroundPrefs 更新背景偏好（$set 局部字段）。
+// 对齐 routes/users.js PUT /background-prefs 的可选字段合并语义。
+func (r *UserRepo) UpdateBackgroundPrefs(ctx context.Context, id any, p BackgroundPrefsPatch) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	set := bson.M{}
+	if p.Image != nil {
+		set["backgroundPrefs.image"] = *p.Image
+	}
+	if p.Enabled != nil {
+		set["backgroundPrefs.enabled"] = *p.Enabled
+	}
+	if p.Opacity != nil {
+		set["backgroundPrefs.opacity"] = *p.Opacity
+	}
+	if p.Blur != nil {
+		set["backgroundPrefs.blur"] = *p.Blur
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": set})
+	return err
+}
+
+// UpdateEmailNotificationPrefs 更新邮件通知偏好（prefs 为「键→布尔」局部映射，键名对齐 7 个偏好键）。
+// 对齐 routes/auth/email.js PUT /email-notification-prefs 的 $set emailNotificationPrefs.<key>。
+func (r *UserRepo) UpdateEmailNotificationPrefs(ctx context.Context, id any, prefs map[string]bool) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	if len(prefs) == 0 {
+		return nil
+	}
+	set := bson.M{}
+	for k, v := range prefs {
+		set["emailNotificationPrefs."+k] = v
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": set})
+	return err
+}
+
+// FindCreatorsByRole 按角色查找用户（不含敏感字段）。
+// 对齐 routes/admin.js GET /creators 的 User.find({ role }).select('-password')。
+func (r *UserRepo) FindCreatorsByRole(ctx context.Context, role string) ([]model.User, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"role": role}, options.Find().SetProjection(publicProjection))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.User
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// UpdateAvatar 更新头像 URL（routes/users.js POST /avatar）。
+func (r *UserRepo) UpdateAvatar(ctx context.Context, id any, url string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"avatar": url}})
+	return err
+}
+
+// UpdateUsername 更新昵称（routes/users.js PUT /profile）。
+func (r *UserRepo) UpdateUsername(ctx context.Context, id any, username string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"username": username}})
+	return err
+}
+
+// SetTwoFactorSetup 写入 2FA 初始化状态（routes/twoFactor.js POST /enable：
+// 加密密钥 + 备份码 + twoFactorEnabled=false）。
+func (r *UserRepo) SetTwoFactorSetup(ctx context.Context, id any, secretEnc string, backupCodes []string, enabled bool) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+		"twoFactorSecret":      secretEnc,
+		"twoFactorBackupCodes": backupCodes,
+		"twoFactorEnabled":     enabled,
+	}})
+	return err
+}
+
+// EnableTwoFactor 置 twoFactorEnabled=true（routes/twoFactor.js POST /verify-enable）。
+func (r *UserRepo) EnableTwoFactor(ctx context.Context, id any) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"twoFactorEnabled": true}})
+	return err
+}
+
+// DisableTwoFactor 关闭 2FA 并清除密钥与备份码（routes/twoFactor.js POST /disable）。
+func (r *UserRepo) DisableTwoFactor(ctx context.Context, id any) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
+		"$set":   bson.M{"twoFactorEnabled": false},
+		"$unset": bson.M{"twoFactorSecret": "", "twoFactorBackupCodes": ""},
+	})
+	return err
+}
+
+// FindMissingAccountID 查找缺少 accountId 字段的用户（accountId 回填迁移用）。
+func (r *UserRepo) FindMissingAccountID(ctx context.Context) ([]model.User, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"accountId": bson.M{"$exists": false}})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.User
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// UpdateAccountID 仅更新 accountId 字段（$set，保留其余字段）。
+// 对齐 Express 回填迁移的 user.accountId = ...; user.save({validateBeforeSave:false})——
+// mongoose 只持久化被修改的路径，这里用定点 $set 而非整文档覆盖，避免丢失未知旧字段。
+func (r *UserRepo) UpdateAccountID(ctx context.Context, id any, accountID string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"accountId": accountID}})
+	return err
+}
+
+// AccountIDExistsExcluding 判断 accountId 是否被除 excludeID 之外的用户占用（回填迁移碰撞检测用）。
+func (r *UserRepo) AccountIDExistsExcluding(ctx context.Context, accountID string, excludeID any) (bool, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	return r.exists(ctx, bson.M{"accountId": accountID, "_id": bson.M{"$ne": excludeID}})
 }
 
 func (r *UserRepo) findOne(ctx context.Context, filter, projection bson.M) (*model.User, error) {

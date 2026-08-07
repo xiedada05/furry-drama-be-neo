@@ -16,7 +16,9 @@ import (
 type NotificationRepo struct{ coll *mongo.Collection }
 
 // NewNotificationRepo 构造通知仓储。
-func NewNotificationRepo(coll *mongo.Collection) *NotificationRepo { return &NotificationRepo{coll: coll} }
+func NewNotificationRepo(coll *mongo.Collection) *NotificationRepo {
+	return &NotificationRepo{coll: coll}
+}
 
 // Create 插入通知。
 func (r *NotificationRepo) Create(ctx context.Context, n *model.Notification) error {
@@ -32,6 +34,115 @@ func (r *NotificationRepo) DeleteByUser(ctx context.Context, userID any) error {
 	defer cancel()
 	_, err := r.coll.DeleteMany(ctx, bson.M{"userId": userID})
 	return err
+}
+
+// CountUnread 统计用户未读通知数（routes/notifications.js GET /unread-count）。
+func (r *NotificationRepo) CountUnread(ctx context.Context, userID any) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	return r.coll.CountDocuments(ctx, bson.M{"userId": userID, "isRead": false})
+}
+
+// CountByUser 统计用户通知总数（routes/notifications.js GET /list 的 total）。
+func (r *NotificationRepo) CountByUser(ctx context.Context, userID any) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	return r.coll.CountDocuments(ctx, bson.M{"userId": userID})
+}
+
+// FindByUser 分页查询用户通知，按 createdAt 倒序。
+// 对齐 routes/notifications.js GET /list 的 find().sort({createdAt:-1}).skip(...).limit(...)。
+func (r *NotificationRepo) FindByUser(ctx context.Context, userID any, page, limit int) ([]model.Notification, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID},
+		options.Find().
+			SetSort(bson.D{{Key: "createdAt", Value: -1}}).
+			SetSkip(int64((page-1)*limit)).
+			SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.Notification
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// MarkReadByID 将某用户的一条通知标记为已读（routes/notifications.js PUT /read/:id）。
+func (r *NotificationRepo) MarkReadByID(ctx context.Context, id, userID any) error {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id, "userId": userID}, bson.M{"$set": bson.M{"isRead": true}})
+	return err
+}
+
+// MarkAllRead 将用户全部未读通知标记为已读（PUT /read-all），返回修改数。
+func (r *NotificationRepo) MarkAllRead(ctx context.Context, userID any) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	res, err := r.coll.UpdateMany(ctx,
+		bson.M{"userId": userID, "isRead": false},
+		bson.M{"$set": bson.M{"isRead": true}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+// MarkEpisodeRead 将某剧集的未读通知标记为已读（PUT /read-episode/:episodeId），返回修改数。
+func (r *NotificationRepo) MarkEpisodeRead(ctx context.Context, userID, episodeID any) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	res, err := r.coll.UpdateMany(ctx,
+		bson.M{"userId": userID, "episodeId": episodeID, "isRead": false},
+		bson.M{"$set": bson.M{"isRead": true}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}
+
+// ClearRead 删除用户全部已读通知（DELETE /clear-read），返回删除数。
+func (r *NotificationRepo) ClearRead(ctx context.Context, userID any) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	res, err := r.coll.DeleteMany(ctx, bson.M{"userId": userID, "isRead": true})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
+}
+
+// DeleteByIDForUser 删除用户的一条通知（DELETE /:id）。
+func (r *NotificationRepo) DeleteByIDForUser(ctx context.Context, id, userID any) error {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id, "userId": userID})
+	return err
+}
+
+// DeleteReadOlderThan 删除 isRead=true 且 createdAt 早于 cutoff 的通知（src/index.js 每天 3 点 cron）。
+// 返回删除数。
+func (r *NotificationRepo) DeleteReadOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	res, err := r.coll.DeleteMany(ctx, bson.M{"isRead": true, "createdAt": bson.M{"$lt": cutoff}})
+	if err != nil {
+		return 0, err
+	}
+	return res.DeletedCount, nil
 }
 
 // AuditLogRepo 审计日志仓储。
@@ -100,11 +211,12 @@ type SettingRepo struct{ coll *mongo.Collection }
 func NewSettingRepo(coll *mongo.Collection) *SettingRepo { return &SettingRepo{coll: coll} }
 
 // GetFlag 读取迁移标记值（不存在返回 false）。
+// 兼容两种已写入的 value 形态：旧 Express 的 { value: true }，以及本实现的 { value: { done: true } }。
 func (r *SettingRepo) GetFlag(ctx context.Context, key string) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 	var s struct {
-		Value bson.M `bson:"value"`
+		Value any `bson:"value"`
 	}
 	err := r.coll.FindOne(ctx, bson.M{"key": key}).Decode(&s)
 	if errors.Is(err, mongo.ErrNoDocuments) {
@@ -113,8 +225,30 @@ func (r *SettingRepo) GetFlag(ctx context.Context, key string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	done, _ := s.Value["done"].(bool)
-	return done, nil
+	return flagDone(s.Value), nil
+}
+
+// flagDone 从 settings.value 中提取 done 布尔。
+// 驱动把子文档解码为 bson.D（any 目标）或 bson.M（map 目标），两种形态都要处理；
+// 旧 Express 直接写入 value: true，也要识别。
+func flagDone(v any) bool {
+	switch doc := v.(type) {
+	case bool:
+		return doc
+	case bson.M:
+		done, _ := doc["done"].(bool)
+		return done
+	case bson.D:
+		for _, e := range doc {
+			if e.Key == "done" {
+				if b, ok := e.Value.(bool); ok {
+					return b
+				}
+				return false
+			}
+		}
+	}
+	return false
 }
 
 // SetFlag 写入迁移标记。
@@ -231,4 +365,34 @@ func (r *CreatorProfileRepo) DeleteByCreator(ctx context.Context, creatorID any)
 	defer cancel()
 	_, err := r.coll.DeleteMany(ctx, bson.M{"creatorId": creatorID})
 	return err
+}
+
+// Create 插入创作者资料；唯一键冲突（creatorId 已存在）返回 IsDuplicateKey(err)。
+// 未显式设置时补 createdAt / updatedAt 默认值（对齐 mongoose default: Date.now）。
+func (r *CreatorProfileRepo) Create(ctx context.Context, p *model.CreatorProfile) error {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = time.Now()
+	}
+	if p.UpdatedAt.IsZero() {
+		p.UpdatedAt = time.Now()
+	}
+	_, err := r.coll.InsertOne(ctx, p)
+	if mongo.IsDuplicateKeyError(err) {
+		return errDuplicateKey
+	}
+	return err
+}
+
+// FindByCreator 按 creatorId 查找创作者资料；不存在返回 ErrNotFound。
+func (r *CreatorProfileRepo) FindByCreator(ctx context.Context, creatorID any) (*model.CreatorProfile, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	p := &model.CreatorProfile{}
+	err := r.coll.FindOne(ctx, bson.M{"creatorId": creatorID}).Decode(p)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrNotFound
+	}
+	return p, err
 }

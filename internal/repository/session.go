@@ -151,3 +151,39 @@ func (r *SessionRepo) DeleteByUser(ctx context.Context, userID any) error {
 	_, err := r.coll.DeleteMany(ctx, bson.M{"userId": userID})
 	return err
 }
+
+// FindByUser 返回某用户最近登录的会话，按 loginAt 倒序，最多 limit 条。
+// 对齐 routes/userSessions.js GET /my 的 find({userId}).sort({loginAt:-1}).limit(20)。
+func (r *SessionRepo) FindByUser(ctx context.Context, userID any, limit int) ([]model.UserSession, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	if limit <= 0 {
+		limit = 20
+	}
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID},
+		options.Find().SetSort(bson.D{{Key: "loginAt", Value: -1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.UserSession
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// MarkInactiveOlderThan 把 lastActiveAt 早于 cutoff 的 active 会话批量置为 inactive+logoutAt。
+// 对齐 src/index.js 会话清理 cron 的 updateMany({isActive:true, lastActiveAt:{$lt:cutoff}})。
+// 返回被修改的文档数。
+func (r *SessionRepo) MarkInactiveOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	res, err := r.coll.UpdateMany(ctx,
+		bson.M{"isActive": true, "lastActiveAt": bson.M{"$lt": cutoff}},
+		bson.M{"$set": bson.M{"isActive": false, "logoutAt": time.Now()}})
+	if err != nil {
+		return 0, err
+	}
+	return res.ModifiedCount, nil
+}

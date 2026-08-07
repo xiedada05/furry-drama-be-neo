@@ -20,11 +20,12 @@ func deprecationHeaders() gin.HandlerFunc {
 	}
 }
 
-// MountDual 把 register 注册的 handler 同时挂载到 /api<mountPath> 与 /api/v1<mountPath>。
-// mountPath 形如 "/auth"（首部含斜杠，不含 /api 前缀）。
-func MountDual(r *gin.Engine, mountPath string, register func(g *gin.RouterGroup)) {
-	register(r.Group("/api" + mountPath))
-	v1 := r.Group("/api/v1" + mountPath)
+// MountDual 把 register 注册的 handler 同时挂载到 <parent>/<mountPath> 与
+// <parent>/v1<mountPath>。典型用法：parent 为 /api 路由组（继承全局中间件与限流），
+// mountPath 形如 "/auth"（首部含斜杠）。
+func MountDual(parent *gin.RouterGroup, mountPath string, register func(g *gin.RouterGroup)) {
+	register(parent.Group(mountPath))
+	v1 := parent.Group("/v1" + mountPath)
 	v1.Use(deprecationHeaders())
 	register(v1)
 }
