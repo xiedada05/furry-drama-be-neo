@@ -83,7 +83,7 @@ func (r *UserRepo) FindByEmailWith2FA(ctx context.Context, email string) (*model
 func (r *UserRepo) FindByID(ctx context.Context, id any) (*model.User, error) {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	return r.findOne(ctx, bson.M{"_id": id}, publicProjection)
+	return r.findOne(ctx, bson.M{"_id": ToObjectID(id)}, publicProjection)
 }
 
 // FindByAccountID 按 accountId 查找（不含敏感字段）。
@@ -133,7 +133,7 @@ func (r *UserRepo) Save(ctx context.Context, u *model.User) error {
 func (r *UserRepo) UpdateVerified(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"isEmailVerified": true}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"isEmailVerified": true}})
 	return err
 }
 
@@ -141,7 +141,7 @@ func (r *UserRepo) UpdateVerified(ctx context.Context, id any) error {
 func (r *UserRepo) SetEmailVerifiedAndEmail(ctx context.Context, id any, email string) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"email": email, "isEmailVerified": true}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"email": email, "isEmailVerified": true}})
 	return err
 }
 
@@ -149,7 +149,7 @@ func (r *UserRepo) SetEmailVerifiedAndEmail(ctx context.Context, id any, email s
 func (r *UserRepo) UpdatePassword(ctx context.Context, id any, hash string, changedAt time.Time) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id},
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)},
 		bson.M{"$set": bson.M{"password": hash, "passwordChangedAt": changedAt}})
 	return err
 }
@@ -170,7 +170,7 @@ func (r *UserRepo) IncLoginAttempts(ctx context.Context, id any) error {
 		LockUntil     int64 `bson:"lockUntil"`
 		LoginAttempts int   `bson:"loginAttempts"`
 	}
-	err := r.coll.FindOne(ctx, bson.M{"_id": id},
+	err := r.coll.FindOne(ctx, bson.M{"_id": ToObjectID(id)},
 		options.FindOne().SetProjection(bson.M{"lockUntil": 1, "loginAttempts": 1})).Decode(&lock)
 	if err != nil {
 		return normalizeErr(err)
@@ -178,7 +178,7 @@ func (r *UserRepo) IncLoginAttempts(ctx context.Context, id any) error {
 	now := time.Now()
 	if lock.LockUntil > 0 && lock.LockUntil > now.UnixMilli() {
 		// 已锁定：重置并清除锁
-		_, err = r.coll.UpdateOne(ctx, bson.M{"_id": id},
+		_, err = r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)},
 			bson.M{"$set": bson.M{"loginAttempts": 1}, "$unset": bson.M{"lockUntil": ""}})
 		return err
 	}
@@ -187,7 +187,7 @@ func (r *UserRepo) IncLoginAttempts(ctx context.Context, id any) error {
 	if next >= r.maxAttempts {
 		update["$set"].(bson.M)["lockUntil"] = now.Add(time.Duration(r.lockMinutes) * time.Minute).UnixMilli()
 	}
-	_, err = r.coll.UpdateOne(ctx, bson.M{"_id": id}, update)
+	_, err = r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, update)
 	return err
 }
 
@@ -195,7 +195,7 @@ func (r *UserRepo) IncLoginAttempts(ctx context.Context, id any) error {
 func (r *UserRepo) ResetLoginAttempts(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id},
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)},
 		bson.M{"$set": bson.M{"loginAttempts": 0}, "$unset": bson.M{"lockUntil": ""}})
 	return err
 }
@@ -204,7 +204,7 @@ func (r *UserRepo) ResetLoginAttempts(ctx context.Context, id any) error {
 func (r *UserRepo) DeleteByID(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id})
+	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": ToObjectID(id)})
 	return err
 }
 
@@ -214,7 +214,7 @@ func (r *UserRepo) DeleteByID(ctx context.Context, id any) error {
 func (r *UserRepo) FindByIDWithAuth(ctx context.Context, id any) (*model.User, error) {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	return r.findOne(ctx, bson.M{"_id": id}, bson.M{"twoFactorSecret": 0, "twoFactorBackupCodes": 0})
+	return r.findOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"twoFactorSecret": 0, "twoFactorBackupCodes": 0})
 }
 
 // FindByIDWithAllSecrets 按 ID 查找，返回全部字段（含 password / 2FA 密文 / 锁定字段）。
@@ -222,7 +222,7 @@ func (r *UserRepo) FindByIDWithAuth(ctx context.Context, id any) (*model.User, e
 func (r *UserRepo) FindByIDWithAllSecrets(ctx context.Context, id any) (*model.User, error) {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	return r.findOne(ctx, bson.M{"_id": id}, bson.M{})
+	return r.findOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{})
 }
 
 // UpdateDeviceInfoAndLogin 更新登录后的设备信息与最近登录字段。
@@ -231,7 +231,7 @@ func (r *UserRepo) FindByIDWithAllSecrets(ctx context.Context, id any) (*model.U
 func (r *UserRepo) UpdateDeviceInfoAndLogin(ctx context.Context, id any, deviceInfo model.DeviceInfo, lastLoginAt time.Time, lastLoginIP, lastLoginRegion string) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{
 		"deviceInfo":      deviceInfo,
 		"lastLoginAt":     lastLoginAt,
 		"lastLoginIp":     lastLoginIP,
@@ -269,7 +269,7 @@ func (r *UserRepo) UpdateBackgroundPrefs(ctx context.Context, id any, p Backgrou
 	if len(set) == 0 {
 		return nil
 	}
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": set})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": set})
 	return err
 }
 
@@ -285,7 +285,7 @@ func (r *UserRepo) UpdateEmailNotificationPrefs(ctx context.Context, id any, pre
 	for k, v := range prefs {
 		set["emailNotificationPrefs."+k] = v
 	}
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": set})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": set})
 	return err
 }
 
@@ -310,7 +310,7 @@ func (r *UserRepo) FindCreatorsByRole(ctx context.Context, role string) ([]model
 func (r *UserRepo) UpdateAvatar(ctx context.Context, id any, url string) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"avatar": url}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"avatar": url}})
 	return err
 }
 
@@ -318,7 +318,7 @@ func (r *UserRepo) UpdateAvatar(ctx context.Context, id any, url string) error {
 func (r *UserRepo) UpdateUsername(ctx context.Context, id any, username string) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"username": username}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"username": username}})
 	return err
 }
 
@@ -327,7 +327,7 @@ func (r *UserRepo) UpdateUsername(ctx context.Context, id any, username string) 
 func (r *UserRepo) SetTwoFactorSetup(ctx context.Context, id any, secretEnc string, backupCodes []string, enabled bool) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{
 		"twoFactorSecret":      secretEnc,
 		"twoFactorBackupCodes": backupCodes,
 		"twoFactorEnabled":     enabled,
@@ -339,7 +339,7 @@ func (r *UserRepo) SetTwoFactorSetup(ctx context.Context, id any, secretEnc stri
 func (r *UserRepo) EnableTwoFactor(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"twoFactorEnabled": true}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"twoFactorEnabled": true}})
 	return err
 }
 
@@ -347,7 +347,7 @@ func (r *UserRepo) EnableTwoFactor(ctx context.Context, id any) error {
 func (r *UserRepo) DisableTwoFactor(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{
 		"$set":   bson.M{"twoFactorEnabled": false},
 		"$unset": bson.M{"twoFactorSecret": "", "twoFactorBackupCodes": ""},
 	})
@@ -376,7 +376,7 @@ func (r *UserRepo) FindMissingAccountID(ctx context.Context) ([]model.User, erro
 func (r *UserRepo) UpdateAccountID(ctx context.Context, id any, accountID string) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": bson.M{"accountId": accountID}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"accountId": accountID}})
 	return err
 }
 

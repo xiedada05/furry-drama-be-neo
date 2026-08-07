@@ -11,6 +11,7 @@ package upload
 
 import (
 	"crypto/rand"
+	"path/filepath"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -182,4 +183,17 @@ func randHex(n int) string {
 		return hex.EncodeToString([]byte(fmt.Sprintf("%020d", time.Now().UnixNano())))
 	}
 	return hex.EncodeToString(buf)
+}
+
+// RemoveFile 删除 uploads 目录下的文件（path 为相对文件名，不含 /uploads/ 前缀）。
+// 文件不存在返回 nil（对齐 Express 删除旧文件忽略错误）。
+func RemoveFile(path string) error {
+	full := path
+	if Dir != "" {
+		full = filepath.Join(Dir, path)
+	}
+	if _, err := os.Stat(full); os.IsNotExist(err) {
+		return nil
+	}
+	return os.Remove(full)
 }

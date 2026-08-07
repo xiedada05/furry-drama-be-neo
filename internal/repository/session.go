@@ -139,7 +139,7 @@ func (r *SessionRepo) DeactivateByID(ctx context.Context, id any) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
 	_, err := r.coll.UpdateOne(ctx,
-		bson.M{"_id": id, "isActive": true},
+		bson.M{"_id": ToObjectID(id), "isActive": true},
 		bson.M{"$set": bson.M{"isActive": false, "logoutAt": time.Now()}})
 	return err
 }
@@ -150,6 +150,75 @@ func (r *SessionRepo) DeleteByUser(ctx context.Context, userID any) error {
 	defer cancel()
 	_, err := r.coll.DeleteMany(ctx, bson.M{"userId": userID})
 	return err
+}
+
+// FindByID 按 ID 查找会话（userSessions 管理用）。
+func (r *SessionRepo) FindByID(ctx context.Context, id any) (*model.UserSession, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	s := &model.UserSession{}
+	err := r.coll.FindOne(ctx, bson.M{"_id": ToObjectID(id)}).Decode(s)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, ErrNotFound
+	}
+	return s, err
+}
+
+// UpdateDeviceName 更新会话的设备名称（本人校验由 handler 负责）。
+func (r *SessionRepo) UpdateDeviceName(ctx context.Context, id, userID any, name string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id), "userId": userID},
+		bson.M{"$set": bson.M{"deviceInfo.deviceName": name}})
+	return err
+}
+
+// UpsertByTokenHash 按 tokenHash upsert 会话（对齐 userSessions.js POST /create 的
+// findOneAndUpdate + upsert + $setOnInsert loginAt）。返回更新后文档。
+func (r *SessionRepo) UpsertByTokenHash(ctx context.Context, tokenHash string, userID any, deviceInfo model.DeviceInfo, ip string, now time.Time) (*model.UserSession, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	s := &model.UserSession{}
+	err := r.coll.FindOneAndUpdate(
+		ctx,
+		bson.M{"tokenHash": tokenHash},
+		bson.M{
+			"$set":         bson.M{"userId": userID, "deviceInfo": deviceInfo, "ip": ip, "isActive": true, "lastActiveAt": now},
+			"$setOnInsert": bson.M{"loginAt": now},
+		},
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After),
+	).Decode(s)
+	return s, err
+}
+
+// DeactivateAllOtherByTokenHash 吊销用户除指定 tokenHash 外的全部 active 会话。
+func (r *SessionRepo) DeactivateAllOtherByTokenHash(ctx context.Context, userID any, excludeHash string) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateMany(ctx,
+		bson.M{"userId": userID, "isActive": true, "tokenHash": bson.M{"$ne": excludeHash}},
+		bson.M{"$set": bson.M{"isActive": false, "logoutAt": time.Now()}})
+	return err
+}
+
+// FindAll 返回全部会话（按 loginAt 倒序，最多 limit 条；管理端 GET /all 用）。
+func (r *SessionRepo) FindAll(ctx context.Context, limit int) ([]model.UserSession, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	if limit <= 0 {
+		limit = 200
+	}
+	cur, err := r.coll.Find(ctx, bson.M{},
+		options.Find().SetSort(bson.D{{Key: "loginAt", Value: -1}}).SetLimit(int64(limit)))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.UserSession
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // FindByUser 返回某用户最近登录的会话，按 loginAt 倒序，最多 limit 条。

@@ -84,7 +84,7 @@ func (r *NotificationRepo) FindByUser(ctx context.Context, userID any, page, lim
 func (r *NotificationRepo) MarkReadByID(ctx context.Context, id, userID any) error {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id, "userId": userID}, bson.M{"$set": bson.M{"isRead": true}})
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id), "userId": userID}, bson.M{"$set": bson.M{"isRead": true}})
 	return err
 }
 
@@ -129,7 +129,7 @@ func (r *NotificationRepo) ClearRead(ctx context.Context, userID any) (int64, er
 func (r *NotificationRepo) DeleteByIDForUser(ctx context.Context, id, userID any) error {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
-	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": id, "userId": userID})
+	_, err := r.coll.DeleteOne(ctx, bson.M{"_id": ToObjectID(id), "userId": userID})
 	return err
 }
 
@@ -286,6 +286,22 @@ func (r *FollowRepo) DeleteByUser(ctx context.Context, userID any) error {
 	return deleteByUser(ctx, r.coll, userID)
 }
 
+// FindByUser 返回用户全部追番（导出用）。
+func (r *FollowRepo) FindByUser(ctx context.Context, userID any) ([]model.Follow, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.Follow
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // HistoryRepo 观看历史仓储。
 type HistoryRepo struct{ coll *mongo.Collection }
 
@@ -297,6 +313,22 @@ func (r *HistoryRepo) DeleteByUser(ctx context.Context, userID any) error {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 	return deleteByUser(ctx, r.coll, userID)
+}
+
+// FindByUser 返回用户全部历史（导出用）。
+func (r *HistoryRepo) FindByUser(ctx context.Context, userID any) ([]model.History, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.History
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // FavoriteRepo 收藏仓储。
@@ -312,6 +344,22 @@ func (r *FavoriteRepo) DeleteByUser(ctx context.Context, userID any) error {
 	return deleteByUser(ctx, r.coll, userID)
 }
 
+// FindByUser 返回用户全部收藏（导出用）。
+func (r *FavoriteRepo) FindByUser(ctx context.Context, userID any) ([]model.Favorite, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.Favorite
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // RatingRepo 评分仓储。
 type RatingRepo struct{ coll *mongo.Collection }
 
@@ -323,6 +371,22 @@ func (r *RatingRepo) DeleteByUser(ctx context.Context, userID any) error {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
 	defer cancel()
 	return deleteByUser(ctx, r.coll, userID)
+}
+
+// FindByUser 返回用户全部评分（导出用）。
+func (r *RatingRepo) FindByUser(ctx context.Context, userID any) ([]model.Rating, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"userId": userID})
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.Rating
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
 }
 
 // ReportRepo 举报仓储。

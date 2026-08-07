@@ -72,9 +72,12 @@ func (s *Store) Stop() {
 	}
 }
 
-// Set 存入验证码（自动计算过期时间 = now + ttl）。
+// Set 存入验证码。若 entry.ExpiresAt 为零值则自动设为 now + ttl
+// （调用方已显式设置时保留原值——更新尝试次数不应延长 TTL）。
 func (s *Store) Set(code string, e Entry) {
-	e.ExpiresAt = time.Now().Add(s.ttl)
+	if e.ExpiresAt.IsZero() {
+		e.ExpiresAt = time.Now().Add(s.ttl)
+	}
 	s.mu.Lock()
 	s.items[code] = e
 	s.mu.Unlock()

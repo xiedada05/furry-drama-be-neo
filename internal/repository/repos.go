@@ -29,6 +29,7 @@ type Repos struct {
 	Reports         *ReportRepo
 	Feedbacks       *FeedbackRepo
 	CreatorProfiles *CreatorProfileRepo
+	Episodes        *EpisodeRepo
 }
 
 // NewRepos 基于已连接的数据库构造 Repos。
@@ -50,6 +51,7 @@ func NewRepos(db *mongo.Database, loginMaxAttempts, loginLockMinutes int) *Repos
 		Reports:         NewReportRepo(db.Collection("reports")),
 		Feedbacks:       NewFeedbackRepo(db.Collection("feedbacks")),
 		CreatorProfiles: NewCreatorProfileRepo(db.Collection("creatorprofiles")),
+		Episodes:        NewEpisodeRepo(db.Collection("episodes")),
 	}
 }
 

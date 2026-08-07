@@ -116,6 +116,12 @@ var (
 		Window: time.Hour, Max: 3,
 		Message: "操作过于频繁，请稍后再试",
 	}
+	// ExportSpec 个人数据导出限流器 3/1h（挂 /api/users/export-my-data）。
+	ExportSpec = Spec{
+		Name: "export", Mounts: []string{"/users/export-my-data"},
+		Window: time.Hour, Max: 3,
+		Message: "导出请求过于频繁，请1小时后再试",
+	}
 )
 
 // IPKey 对齐 express-rate-limit 的 ipKeyGenerator 语义：
