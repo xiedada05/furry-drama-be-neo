@@ -1,0 +1,219 @@
+basePath: /api
+definitions:
+  github_com_xiedada05_furry-drama-be-neo_internal_auth.DeviceInfoPayload:
+    properties:
+      browser:
+        type: string
+      browserVersion:
+        type: string
+      carrier:
+        type: string
+      deviceModel:
+        type: string
+      deviceType:
+        type: string
+      language:
+        type: string
+      os:
+        type: string
+      osVersion:
+        type: string
+      screenHeight:
+        type: integer
+      screenWidth:
+        type: integer
+    type: object
+  internal_handler.loginRequest:
+    properties:
+      altcha:
+        type: string
+      deviceInfo:
+        $ref: '#/definitions/github_com_xiedada05_furry-drama-be-neo_internal_auth.DeviceInfoPayload'
+      email:
+        type: string
+      password:
+        type: string
+    type: object
+  internal_handler.registerRequest:
+    properties:
+      accountId:
+        type: string
+      altcha:
+        type: string
+      deviceInfo:
+        $ref: '#/definitions/github_com_xiedada05_furry-drama-be-neo_internal_auth.DeviceInfoPayload'
+      email:
+        type: string
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+host: localhost:5000
+info:
+  contact: {}
+  description: 兽剧内容聚合平台后端服务 API 文档（neo-server，行为对齐 Express 版）
+  title: 兽剧聚合平台 API
+  version: 1.0.0
+paths:
+  /auth/captcha:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 挑战参数与签名
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 获取验证码挑战
+      tags:
+      - 认证
+  /auth/check-accountId:
+    get:
+      parameters:
+      - description: 账号ID
+        in: query
+        name: accountId
+        required: true
+        type: string
+      responses:
+        "200":
+          description: available
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      summary: 检查账号ID是否可用
+      tags:
+      - 认证
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 登录信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.loginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用户对象或 need2FA
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: needVerification/needDeviceVerify
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户登录
+      tags:
+      - 认证
+  /auth/logout:
+    post:
+      responses:
+        "200":
+          description: message
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 退出登录
+      tags:
+      - 认证
+  /auth/me:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 获取当前用户
+      tags:
+      - 认证
+  /auth/refresh:
+    post:
+      responses:
+        "200":
+          description: 用户对象
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: 并发刷新
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 刷新令牌
+      tags:
+      - 认证
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 注册信息
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.registerRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: message/email/needVerification
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 用户注册
+      tags:
+      - 认证
+  /auth/sse-ticket:
+    get:
+      responses:
+        "200":
+          description: ticket
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 获取 SSE 票据
+      tags:
+      - 认证
+securityDefinitions:
+  bearerAuth:
+    description: 输入 JWT access token（不含 Bearer 前缀；亦可通过 accessToken cookie）
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

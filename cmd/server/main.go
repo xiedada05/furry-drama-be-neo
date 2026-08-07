@@ -7,6 +7,16 @@
 //
 // 启动顺序：加载配置 → 连接 MongoDB → 装配仓储/签名器 → 装配 Gin → 启动 HTTP →
 // 监听 SIGTERM/SIGINT 优雅关停（10s 兜底强退）。M2 起在 listen 前执行启动迁移与 cron。
+//
+// @title 兽剧聚合平台 API
+// @version 1.0.0
+// @description 兽剧内容聚合平台后端服务 API 文档（neo-server，行为对齐 Express 版）
+// @host localhost:5000
+// @BasePath /api
+// @securityDefinitions.apikey bearerAuth
+// @in header
+// @name Authorization
+// @description 输入 JWT access token（不含 Bearer 前缀；亦可通过 accessToken cookie）
 package main
 
 import (

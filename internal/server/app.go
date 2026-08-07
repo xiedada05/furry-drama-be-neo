@@ -17,8 +17,11 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.mongodb.org/mongo-driver/mongo"
 
+	_ "github.com/xiedada05/furry-drama-be-neo/docs" // swag init 生成的 OpenAPI spec（init 注册）
 	"github.com/xiedada05/furry-drama-be-neo/internal/auth"
 	"github.com/xiedada05/furry-drama-be-neo/internal/config"
 	"github.com/xiedada05/furry-drama-be-neo/internal/errors"
@@ -75,6 +78,12 @@ func NewApp(d Deps) *gin.Engine {
 	api := r.Group("/api")
 	api.Use(middleware.RateLimit(store, ratelimit.GlobalSpec, opts))
 	api.GET("/health", handler.Health(d.DB))
+
+	// ---- Swagger UI（仅非生产，对齐 Express src/index.js:352-367）----
+	if d.Config.IsDev {
+		r.GET("/api/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		r.GET("/api/v1/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	}
 
 	// ---- 双版本业务路由挂载（M2 填充；挂 api 组下以继承 globalLimiter）----
 	RegisterRoutes(d, api, store, opts)

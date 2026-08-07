@@ -37,6 +37,11 @@ func (h *Auth) devToken(c *gin.Context) string {
 // ---- captcha ----
 
 // Captcha GET /api/auth/captcha：生成 altcha 挑战。
+// @Summary 获取验证码挑战
+// @Tags 认证
+// @Produce json
+// @Success 200 {object} map[string]any "挑战参数与签名"
+// @Router /auth/captcha [get]
 func (h *Auth) Captcha(c *gin.Context) {
 	ch, err := h.Svc.CreateCaptcha()
 	if err != nil {
@@ -49,6 +54,11 @@ func (h *Auth) Captcha(c *gin.Context) {
 // ---- check-accountId ----
 
 // CheckAccountID GET /api/auth/check-accountId?accountId=：返回账号ID是否可用。
+// @Summary 检查账号ID是否可用
+// @Tags 认证
+// @Param accountId query string true "账号ID"
+// @Success 200 {object} map[string]bool "available"
+// @Router /auth/check-accountId [get]
 func (h *Auth) CheckAccountID(c *gin.Context) {
 	accountID := c.Query("accountId")
 	if accountID == "" {
@@ -75,6 +85,14 @@ type registerRequest struct {
 }
 
 // Register POST /api/auth/register。
+// @Summary 用户注册
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body registerRequest true "注册信息"
+// @Success 200 {object} map[string]any "message/email/needVerification"
+// @Failure 400 {object} map[string]any
+// @Router /auth/register [post]
 func (h *Auth) Register(c *gin.Context) {
 	var req registerRequest
 	_ = c.ShouldBindJSON(&req)
@@ -107,6 +125,15 @@ type loginRequest struct {
 }
 
 // Login POST /api/auth/login。
+// @Summary 用户登录
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body loginRequest true "登录信息"
+// @Success 200 {object} map[string]any "用户对象或 need2FA"
+// @Failure 400 {object} map[string]any
+// @Failure 403 {object} map[string]any "needVerification/needDeviceVerify"
+// @Router /auth/login [post]
 func (h *Auth) Login(c *gin.Context) {
 	var req loginRequest
 	_ = c.ShouldBindJSON(&req)
@@ -154,6 +181,11 @@ func (h *Auth) Login(c *gin.Context) {
 // ---- logout ----
 
 // Logout POST /api/auth/logout（protect）。吊销会话并清 cookie。
+// @Summary 退出登录
+// @Tags 认证
+// @Security bearerAuth
+// @Success 200 {object} map[string]string "message"
+// @Router /auth/logout [post]
 func (h *Auth) Logout(c *gin.Context) {
 	refreshToken := auth.GetRefreshToken(c)
 	accessToken := ""
@@ -167,6 +199,12 @@ func (h *Auth) Logout(c *gin.Context) {
 // ---- refresh ----
 
 // Refresh POST /api/auth/refresh：校验 refresh、轮换双 token、新建会话。
+// @Summary 刷新令牌
+// @Tags 认证
+// @Success 200 {object} map[string]any "用户对象"
+// @Failure 401 {object} map[string]any
+// @Failure 409 {object} map[string]any "并发刷新"
+// @Router /auth/refresh [post]
 func (h *Auth) Refresh(c *gin.Context) {
 	refreshToken := auth.GetRefreshToken(c)
 	res, err := h.Svc.VerifyRefreshToken(c.Request.Context(), refreshToken)
@@ -190,6 +228,12 @@ func (h *Auth) Refresh(c *gin.Context) {
 // ---- me ----
 
 // Me GET /api/auth/me（protect）。
+// @Summary 获取当前用户
+// @Tags 认证
+// @Security bearerAuth
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Router /auth/me [get]
 func (h *Auth) Me(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	c.JSON(200, h.Svc.MeJSON(user))
@@ -198,6 +242,11 @@ func (h *Auth) Me(c *gin.Context) {
 // ---- sse-ticket ----
 
 // SSETicket GET /api/auth/sse-ticket（protect）：30s 有效的 SSE 票据。
+// @Summary 获取 SSE 票据
+// @Tags 认证
+// @Security bearerAuth
+// @Success 200 {object} map[string]string "ticket"
+// @Router /auth/sse-ticket [get]
 func (h *Auth) SSETicket(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	ticket, err := h.Svc.Signer.Sign(user.ID.Hex(), "sse-ticket", 30*time.Second, nil)
