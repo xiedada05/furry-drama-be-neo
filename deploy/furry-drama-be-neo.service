@@ -1,0 +1,34 @@
+[Unit]
+Description=Furry Drama Tracker Neo Backend (Go/Gin)
+After=network.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 运行用户：建议独立低权限用户；需对 uploads_dir 与 Unix socket 目录有写权限
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/furry-drama-tracker/neo-server
+ExecStart=/opt/furry-drama-tracker/neo-server/bin/furry-drama-be-neo --config=/etc/furry-drama-be-neo.ini --listen=unix:/run/furry-drama-be-neo.sock
+# 用 TCP 监听时替换上面 --listen 为 tcp:0.0.0.0:5000
+Restart=on-failure
+RestartSec=2
+# 安全加固
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# 运行时目录（Unix socket 父目录，自动创建并清理）
+RuntimeDirectory=furry-drama-be-neo
+RuntimeDirectoryMode=0750
+# 对应 Express 的超时参数（慢客户端防护）
+TimeoutStartSec=30
+TimeoutStopSec=15
+
+# 环境变量覆盖（可选，优先于 ini）
+# Environment=JWT_SECRET=...
+# Environment=MONGO_URI=...
+
+[Install]
+WantedBy=multi-user.target

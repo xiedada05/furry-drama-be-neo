@@ -1,0 +1,65 @@
+{
+  "_comment": "差分场景表。每个场景是若干步骤（多步支持注册→登录→refresh 等流程）。字段：method/path/headers/body/ua/devToken。run.js 用独立 cookie jar 逐步骤打两端比对。",
+  "scenarios": [
+    {
+      "name": "health",
+      "steps": [
+        { "method": "GET", "path": "/api/health" }
+      ]
+    },
+    {
+      "name": "csrf-token",
+      "steps": [
+        { "method": "GET", "path": "/api/csrf-token" }
+      ]
+    },
+    {
+      "name": "captcha",
+      "steps": [
+        { "method": "GET", "path": "/api/auth/captcha" }
+      ]
+    },
+    {
+      "name": "check-accountId",
+      "steps": [
+        { "method": "GET", "path": "/api/auth/check-accountId?accountId=diff_user_probe" }
+      ]
+    },
+    {
+      "name": "me-unauth",
+      "steps": [
+        { "method": "GET", "path": "/api/auth/me", "devToken": false }
+      ]
+    },
+    {
+      "name": "login-no-altcha",
+      "steps": [
+        { "method": "POST", "path": "/api/auth/login", "body": { "email": "nobody@test.com", "password": "wrongpass1" } }
+      ]
+    },
+    {
+      "name": "register-invalid-email",
+      "steps": [
+        { "method": "POST", "path": "/api/auth/register", "body": { "accountId": "abc", "username": "u", "email": "not-an-email", "password": "pass1234" } }
+      ]
+    },
+    {
+      "name": "v1-deprecation-headers",
+      "steps": [
+        { "method": "GET", "path": "/api/v1/health" }
+      ]
+    },
+    {
+      "name": "not-found-route",
+      "steps": [
+        { "method": "GET", "path": "/api/nonexistent-endpoint-xyz", "devToken": false }
+      ]
+    },
+    {
+      "name": "cors-denied",
+      "steps": [
+        { "method": "GET", "path": "/api/health", "headers": { "Origin": "http://evil.example.com" } }
+      ]
+    }
+  ]
+}

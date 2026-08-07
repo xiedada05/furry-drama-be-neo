@@ -23,8 +23,11 @@ func CSRF() gin.HandlerFunc {
 			c.AbortWithStatusJSON(403, gin.H{"message": "CSRF token mismatch"})
 		case cookieTok != "" && headerTok == "":
 			c.AbortWithStatusJSON(403, gin.H{"message": "CSRF protection: missing X-XSRF-TOKEN header"})
-		default:
+		case cookieTok == "":
 			c.AbortWithStatusJSON(403, gin.H{"message": "CSRF protection: missing XSRF-TOKEN cookie, please refresh the page"})
+		default:
+			// cookie 与 header 均存在且相等：放行。
+			c.Next()
 		}
 	}
 }
