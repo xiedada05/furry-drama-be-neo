@@ -56,6 +56,104 @@ info:
   title: 兽剧聚合平台 API
   version: 1.0.0
 paths:
+  /2fa/disable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 或备份码
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 关闭 2FA
+      tags:
+      - 2FA
+  /2fa/enable:
+    post:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: secret/backupCodes/otpauthUrl
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 开启 2FA（生成密钥）
+      tags:
+      - 2FA
+  /2fa/verify:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 或备份码
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: verified
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 校验 2FA 码
+      tags:
+      - 2FA
+  /2fa/verify-enable:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: TOTP 码
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 确认开启 2FA
+      tags:
+      - 2FA
+  /auth/cancel-deletion:
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 取消注销申请
+      tags:
+      - 认证
   /auth/captcha:
     get:
       produces:
@@ -67,6 +165,55 @@ paths:
             additionalProperties: true
             type: object
       summary: 获取验证码挑战
+      tags:
+      - 认证
+  /auth/change-email:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: newEmail/password
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 修改绑定邮箱（超管）
+      tags:
+      - 认证
+  /auth/change-password:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: currentPassword/newPassword
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 修改密码
       tags:
       - 认证
   /auth/check-accountId:
@@ -85,6 +232,90 @@ paths:
               type: boolean
             type: object
       summary: 检查账号ID是否可用
+      tags:
+      - 认证
+  /auth/confirm-device-login:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 6 位登录码
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用户对象或 need2FA
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 确认设备登录
+      tags:
+      - 认证
+  /auth/deletion-status:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 注销申请状态
+      tags:
+      - 认证
+  /auth/email-notification-prefs:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: 7 个布尔偏好键
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 更新邮件通知偏好
+      tags:
+      - 认证
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: email/altcha
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 忘记密码
       tags:
       - 认证
   /auth/login:
@@ -117,6 +348,28 @@ paths:
             additionalProperties: true
             type: object
       summary: 用户登录
+      tags:
+      - 认证
+  /auth/login-2fa:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: email/twoFactorToken/twoFactorChallenge
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 用户对象
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 2FA 登录
       tags:
       - 认证
   /auth/logout:
@@ -196,6 +449,104 @@ paths:
       summary: 用户注册
       tags:
       - 认证
+  /auth/request-deletion:
+    post:
+      responses:
+        "200":
+          description: deletionRequestedAt/deleteAt
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 申请注销账号
+      tags:
+      - 认证
+  /auth/request-email-change:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: password/newEmail/altcha
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 申请修改邮箱
+      tags:
+      - 认证
+  /auth/resend-verification:
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 重发验证码（登录用户）
+      tags:
+      - 认证
+  /auth/resend-verification-by-email:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: email/altcha
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 按邮箱重发验证码
+      tags:
+      - 认证
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: token/newPassword
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 重置密码
+      tags:
+      - 认证
   /auth/sse-ticket:
     get:
       responses:
@@ -210,6 +561,349 @@ paths:
       summary: 获取 SSE 票据
       tags:
       - 认证
+  /auth/verify-device:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: device-verify JWT
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: verified/loginCode
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 设备验证：邮箱链接换取登录码
+      tags:
+      - 认证
+  /auth/verify-email:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: 6 位验证码
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: 验证邮箱
+      tags:
+      - 认证
+  /auth/verify-email-change:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: email-change JWT
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: email
+          schema:
+            additionalProperties: true
+            type: object
+      summary: 确认修改邮箱
+      tags:
+      - 认证
+  /user-sessions/{id}:
+    delete:
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 下线指定会话
+      tags:
+      - 用户会话
+  /user-sessions/{id}/name:
+    put:
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: deviceName
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 重命名会话
+      tags:
+      - 用户会话
+  /user-sessions/admin/{id}:
+    delete:
+      parameters:
+      - description: 会话 ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 管理员下线会话
+      tags:
+      - 用户会话
+  /user-sessions/admin/user/{userId}/all:
+    delete:
+      parameters:
+      - description: 用户 ID
+        in: path
+        name: userId
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 管理员下线用户全部会话
+      tags:
+      - 用户会话
+  /user-sessions/all:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - bearerAuth: []
+      summary: 全部会话（超管）
+      tags:
+      - 用户会话
+  /user-sessions/create:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: screenWidth/screenHeight/language
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: sessionId
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 创建用户会话（记录设备）
+      tags:
+      - 用户会话
+  /user-sessions/heartbeat:
+    post:
+      responses:
+        "200":
+          description: ok
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 会话心跳
+      tags:
+      - 用户会话
+  /user-sessions/my:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              additionalProperties: true
+              type: object
+            type: array
+      security:
+      - bearerAuth: []
+      summary: 我的会话列表
+      tags:
+      - 用户会话
+  /user-sessions/my/all:
+    delete:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 下线其他所有设备
+      tags:
+      - 用户会话
+  /users/avatar:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 图片（≤2MB）
+        in: formData
+        name: avatar
+        required: true
+        type: file
+      responses:
+        "200":
+          description: url
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 上传头像
+      tags:
+      - 用户
+  /users/background-prefs:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: enabled/opacity/blur/image
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: backgroundPrefs
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 更新背景偏好
+      tags:
+      - 用户
+  /users/background-upload:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: 图片（≤5MB）
+        in: formData
+        name: image
+        required: true
+        type: file
+      responses:
+        "200":
+          description: url
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 上传背景图
+      tags:
+      - 用户
+  /users/export-my-data:
+    get:
+      parameters:
+      - description: json|csv
+        in: query
+        name: format
+        type: string
+      responses:
+        "200":
+          description: 文件下载
+          schema:
+            type: string
+      security:
+      - bearerAuth: []
+      summary: 导出个人数据
+      tags:
+      - 用户
+  /users/profile:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: username
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - bearerAuth: []
+      summary: 更新昵称
+      tags:
+      - 用户
 securityDefinitions:
   bearerAuth:
     description: 输入 JWT access token（不含 Bearer 前缀；亦可通过 accessToken cookie）

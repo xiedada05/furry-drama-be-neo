@@ -15,6 +15,12 @@ func (h *Auth) twoFactorKeyHex() string {
 }
 
 // Enable2FA POST /api/2fa/enable（protect）：生成 TOTP secret + 备份码并加密存储。
+// @Summary 开启 2FA（生成密钥）
+// @Tags 2FA
+// @Security bearerAuth
+// @Produce json
+// @Success 200 {object} map[string]any "secret/backupCodes/otpauthUrl"
+// @Router /2fa/enable [post]
 func (h *Auth) Enable2FA(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	u, err := h.Svc.Repos.Users.FindByIDWithAllSecrets(c.Request.Context(), user.ID)
@@ -36,6 +42,13 @@ func (h *Auth) Enable2FA(c *gin.Context) {
 }
 
 // VerifyEnable2FA POST /api/2fa/verify-enable（protect）：TOTP 校验后启用 2FA。
+// @Summary 确认开启 2FA
+// @Tags 2FA
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "TOTP 码"
+// @Success 200 {object} map[string]string
+// @Router /2fa/verify-enable [post]
 func (h *Auth) VerifyEnable2FA(c *gin.Context) {
 	var req struct {
 		Token string `json:"token"`
@@ -61,6 +74,13 @@ func (h *Auth) VerifyEnable2FA(c *gin.Context) {
 }
 
 // Disable2FA POST /api/2fa/disable（protect）：TOTP/备份码校验后关闭 2FA。
+// @Summary 关闭 2FA
+// @Tags 2FA
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "TOTP 或备份码"
+// @Success 200 {object} map[string]string
+// @Router /2fa/disable [post]
 func (h *Auth) Disable2FA(c *gin.Context) {
 	var req struct {
 		Token string `json:"token"`
@@ -93,6 +113,13 @@ func (h *Auth) Disable2FA(c *gin.Context) {
 }
 
 // Verify2FA POST /api/2fa/verify（protect）：校验 TOTP/备份码。
+// @Summary 校验 2FA 码
+// @Tags 2FA
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "TOTP 或备份码"
+// @Success 200 {object} map[string]bool "verified"
+// @Router /2fa/verify [post]
 func (h *Auth) Verify2FA(c *gin.Context) {
 	var req struct {
 		Token string `json:"token"`

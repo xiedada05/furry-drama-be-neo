@@ -10,6 +10,14 @@ import (
 // ---- email ----
 
 // ChangeEmail PUT /api/auth/change-email（superAdminProtect + requireEmailChanged）。
+// @Summary 修改绑定邮箱（超管）
+// @Tags 认证
+// @Security bearerAuth
+// @Accept json
+// @Produce json
+// @Param body body object true "newEmail/password"
+// @Success 200 {object} map[string]any
+// @Router /auth/change-email [put]
 func (h *Auth) ChangeEmail(c *gin.Context) {
 	var req struct {
 		NewEmail string `json:"newEmail"`
@@ -30,6 +38,14 @@ func (h *Auth) ChangeEmail(c *gin.Context) {
 }
 
 // EmailNotificationPrefs PUT /api/auth/email-notification-prefs（protect）。
+// @Summary 更新邮件通知偏好
+// @Tags 认证
+// @Security bearerAuth
+// @Accept json
+// @Produce json
+// @Param body body object true "7 个布尔偏好键"
+// @Success 200 {object} map[string]any
+// @Router /auth/email-notification-prefs [put]
 func (h *Auth) EmailNotificationPrefs(c *gin.Context) {
 	var req map[string]bool
 	_ = c.ShouldBindJSON(&req)
@@ -43,6 +59,13 @@ func (h *Auth) EmailNotificationPrefs(c *gin.Context) {
 }
 
 // VerifyEmail POST /api/auth/verify-email。
+// @Summary 验证邮箱
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "6 位验证码"
+// @Success 200 {object} map[string]string
+// @Router /auth/verify-email [post]
 func (h *Auth) VerifyEmail(c *gin.Context) {
 	var req struct {
 		Code  string `json:"code"`
@@ -63,6 +86,11 @@ func (h *Auth) VerifyEmail(c *gin.Context) {
 }
 
 // ResendVerification POST /api/auth/resend-verification（protect）。
+// @Summary 重发验证码（登录用户）
+// @Tags 认证
+// @Security bearerAuth
+// @Success 200 {object} map[string]string
+// @Router /auth/resend-verification [post]
 func (h *Auth) ResendVerification(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	message, err := h.Svc.ResendVerification(c.Request.Context(), user)
@@ -74,6 +102,13 @@ func (h *Auth) ResendVerification(c *gin.Context) {
 }
 
 // ResendVerificationByEmail POST /api/auth/resend-verification-by-email。
+// @Summary 按邮箱重发验证码
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "email/altcha"
+// @Success 200 {object} map[string]string
+// @Router /auth/resend-verification-by-email [post]
 func (h *Auth) ResendVerificationByEmail(c *gin.Context) {
 	var req struct {
 		Email  string `json:"email"`
@@ -89,6 +124,14 @@ func (h *Auth) ResendVerificationByEmail(c *gin.Context) {
 }
 
 // RequestEmailChange POST /api/auth/request-email-change（protect）。
+// @Summary 申请修改邮箱
+// @Tags 认证
+// @Security bearerAuth
+// @Accept json
+// @Produce json
+// @Param body body object true "password/newEmail/altcha"
+// @Success 200 {object} map[string]string
+// @Router /auth/request-email-change [post]
 func (h *Auth) RequestEmailChange(c *gin.Context) {
 	var req struct {
 		Password string `json:"password"`
@@ -105,6 +148,13 @@ func (h *Auth) RequestEmailChange(c *gin.Context) {
 }
 
 // VerifyEmailChange POST /api/auth/verify-email-change。
+// @Summary 确认修改邮箱
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "email-change JWT"
+// @Success 200 {object} map[string]any "email"
+// @Router /auth/verify-email-change [post]
 func (h *Auth) VerifyEmailChange(c *gin.Context) {
 	var req struct {
 		Token string `json:"token"`
@@ -121,6 +171,11 @@ func (h *Auth) VerifyEmailChange(c *gin.Context) {
 // ---- account ----
 
 // RequestDeletion POST /api/auth/request-deletion（protect）。
+// @Summary 申请注销账号
+// @Tags 认证
+// @Security bearerAuth
+// @Success 200 {object} map[string]any "deletionRequestedAt/deleteAt"
+// @Router /auth/request-deletion [post]
 func (h *Auth) RequestDeletion(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	res, err := h.Svc.RequestDeletion(c.Request.Context(), user)
@@ -136,6 +191,11 @@ func (h *Auth) RequestDeletion(c *gin.Context) {
 }
 
 // CancelDeletion POST /api/auth/cancel-deletion（protect）。
+// @Summary 取消注销申请
+// @Tags 认证
+// @Security bearerAuth
+// @Success 200 {object} map[string]string
+// @Router /auth/cancel-deletion [post]
 func (h *Auth) CancelDeletion(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	if err := h.Svc.CancelDeletion(c.Request.Context(), user); err != nil {
@@ -146,6 +206,12 @@ func (h *Auth) CancelDeletion(c *gin.Context) {
 }
 
 // DeletionStatus GET /api/auth/deletion-status（protect）。
+// @Summary 注销申请状态
+// @Tags 认证
+// @Security bearerAuth
+// @Produce json
+// @Success 200 {object} map[string]any
+// @Router /auth/deletion-status [get]
 func (h *Auth) DeletionStatus(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	c.JSON(200, h.Svc.DeletionStatus(user))

@@ -11,6 +11,13 @@ import (
 // ---- device ----
 
 // VerifyDevice POST /api/auth/verify-device：邮箱验证链接换取设备登录码。
+// @Summary 设备验证：邮箱链接换取登录码
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "device-verify JWT"
+// @Success 200 {object} map[string]any "verified/loginCode"
+// @Router /auth/verify-device [post]
 func (h *Auth) VerifyDevice(c *gin.Context) {
 	var req struct {
 		Token string `json:"token"`
@@ -25,6 +32,13 @@ func (h *Auth) VerifyDevice(c *gin.Context) {
 }
 
 // ConfirmDeviceLogin POST /api/auth/confirm-device-login：输入 6 位码完成登录或进入 2FA。
+// @Summary 确认设备登录
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "6 位登录码"
+// @Success 200 {object} map[string]any "用户对象或 need2FA"
+// @Router /auth/confirm-device-login [post]
 func (h *Auth) ConfirmDeviceLogin(c *gin.Context) {
 	var req struct {
 		LoginCode string `json:"loginCode"`
@@ -58,6 +72,13 @@ func (h *Auth) ConfirmDeviceLogin(c *gin.Context) {
 }
 
 // Login2FA POST /api/auth/login-2fa：TOTP/备份码登录。
+// @Summary 2FA 登录
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "email/twoFactorToken/twoFactorChallenge"
+// @Success 200 {object} map[string]any "用户对象"
+// @Router /auth/login-2fa [post]
 func (h *Auth) Login2FA(c *gin.Context) {
 	var req struct {
 		Email            string                  `json:"email"`
@@ -81,6 +102,14 @@ func (h *Auth) Login2FA(c *gin.Context) {
 // ---- password ----
 
 // ChangePassword PUT /api/auth/change-password（protect）。
+// @Summary 修改密码
+// @Tags 认证
+// @Security bearerAuth
+// @Accept json
+// @Produce json
+// @Param body body object true "currentPassword/newPassword"
+// @Success 200 {object} map[string]string
+// @Router /auth/change-password [put]
 func (h *Auth) ChangePassword(c *gin.Context) {
 	var req struct {
 		CurrentPassword string `json:"currentPassword"`
@@ -96,6 +125,13 @@ func (h *Auth) ChangePassword(c *gin.Context) {
 }
 
 // ForgotPassword POST /api/auth/forgot-password。
+// @Summary 忘记密码
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "email/altcha"
+// @Success 200 {object} map[string]string
+// @Router /auth/forgot-password [post]
 func (h *Auth) ForgotPassword(c *gin.Context) {
 	var req struct {
 		Email  string `json:"email"`
@@ -111,6 +147,13 @@ func (h *Auth) ForgotPassword(c *gin.Context) {
 }
 
 // ResetPassword POST /api/auth/reset-password。
+// @Summary 重置密码
+// @Tags 认证
+// @Accept json
+// @Produce json
+// @Param body body object true "token/newPassword"
+// @Success 200 {object} map[string]string
+// @Router /auth/reset-password [post]
 func (h *Auth) ResetPassword(c *gin.Context) {
 	var req struct {
 		Token       string `json:"token"`

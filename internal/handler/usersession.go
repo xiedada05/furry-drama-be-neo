@@ -29,6 +29,13 @@ func sessionJSON(s *model.UserSession, isCurrent bool) gin.H {
 }
 
 // CreateUserSession POST /api/user-sessions/create（protect）。
+// @Summary 创建用户会话（记录设备）
+// @Tags 用户会话
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "screenWidth/screenHeight/language"
+// @Success 200 {object} map[string]string "sessionId"
+// @Router /user-sessions/create [post]
 func (h *Auth) CreateUserSession(c *gin.Context) {
 	var req struct {
 		ScreenWidth  int    `json:"screenWidth"`
@@ -68,6 +75,12 @@ func (h *Auth) CreateUserSession(c *gin.Context) {
 }
 
 // MyUserSessions GET /api/user-sessions/my（protect）。
+// @Summary 我的会话列表
+// @Tags 用户会话
+// @Security bearerAuth
+// @Produce json
+// @Success 200 {array} map[string]any
+// @Router /user-sessions/my [get]
 func (h *Auth) MyUserSessions(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	accessToken, _ := c.Get(middleware.ContextAuthTokenKey)
@@ -86,6 +99,13 @@ func (h *Auth) MyUserSessions(c *gin.Context) {
 }
 
 // RenameUserSession PUT /api/user-sessions/:id/name（protect）。
+// @Summary 重命名会话
+// @Tags 用户会话
+// @Security bearerAuth
+// @Param id path string true "会话 ID"
+// @Param body body object true "deviceName"
+// @Success 200 {object} map[string]string
+// @Router /user-sessions/{id}/name [put]
 func (h *Auth) RenameUserSession(c *gin.Context) {
 	var req struct {
 		DeviceName string `json:"deviceName"`
@@ -122,6 +142,12 @@ func (h *Auth) RenameUserSession(c *gin.Context) {
 }
 
 // DeleteUserSession DELETE /api/user-sessions/:id（protect）。不能下线当前设备。
+// @Summary 下线指定会话
+// @Tags 用户会话
+// @Security bearerAuth
+// @Param id path string true "会话 ID"
+// @Success 200 {object} map[string]string
+// @Router /user-sessions/{id} [delete]
 func (h *Auth) DeleteUserSession(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	accessToken, _ := c.Get(middleware.ContextAuthTokenKey)
@@ -153,6 +179,11 @@ func (h *Auth) DeleteUserSession(c *gin.Context) {
 }
 
 // DeleteAllOtherSessions DELETE /api/user-sessions/my/all（protect）。
+// @Summary 下线其他所有设备
+// @Tags 用户会话
+// @Security bearerAuth
+// @Success 200 {object} map[string]string
+// @Router /user-sessions/my/all [delete]
 func (h *Auth) DeleteAllOtherSessions(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	accessToken, _ := c.Get(middleware.ContextAuthTokenKey)
@@ -165,6 +196,11 @@ func (h *Auth) DeleteAllOtherSessions(c *gin.Context) {
 }
 
 // Heartbeat POST /api/user-sessions/heartbeat（protect）。
+// @Summary 会话心跳
+// @Tags 用户会话
+// @Security bearerAuth
+// @Success 200 {object} map[string]bool "ok"
+// @Router /user-sessions/heartbeat [post]
 func (h *Auth) Heartbeat(c *gin.Context) {
 	accessToken, _ := c.Get(middleware.ContextAuthTokenKey)
 	tokenStr, _ := accessToken.(string)
@@ -176,6 +212,12 @@ func (h *Auth) Heartbeat(c *gin.Context) {
 }
 
 // AllUserSessions GET /api/user-sessions/all（superAdminProtect）。
+// @Summary 全部会话（超管）
+// @Tags 用户会话
+// @Security bearerAuth
+// @Produce json
+// @Success 200 {array} map[string]any
+// @Router /user-sessions/all [get]
 func (h *Auth) AllUserSessions(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	_ = user
@@ -202,6 +244,12 @@ func (h *Auth) AllUserSessions(c *gin.Context) {
 }
 
 // AdminDeleteSession DELETE /api/user-sessions/admin/:id（superAdminProtect）。
+// @Summary 管理员下线会话
+// @Tags 用户会话
+// @Security bearerAuth
+// @Param id path string true "会话 ID"
+// @Success 200 {object} map[string]string
+// @Router /user-sessions/admin/{id} [delete]
 func (h *Auth) AdminDeleteSession(c *gin.Context) {
 	id, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
@@ -220,6 +268,12 @@ func (h *Auth) AdminDeleteSession(c *gin.Context) {
 }
 
 // AdminDeleteUserSessions DELETE /api/user-sessions/admin/user/:userId/all（superAdminProtect）。
+// @Summary 管理员下线用户全部会话
+// @Tags 用户会话
+// @Security bearerAuth
+// @Param userId path string true "用户 ID"
+// @Success 200 {object} map[string]string
+// @Router /user-sessions/admin/user/{userId}/all [delete]
 func (h *Auth) AdminDeleteUserSessions(c *gin.Context) {
 	userID, err := primitive.ObjectIDFromHex(c.Param("userId"))
 	if err != nil {

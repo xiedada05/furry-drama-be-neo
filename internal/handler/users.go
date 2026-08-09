@@ -14,6 +14,13 @@ import (
 )
 
 // Avatar POST /api/users/avatar（protect + 2MB）。
+// @Summary 上传头像
+// @Tags 用户
+// @Security bearerAuth
+// @Accept multipart/form-data
+// @Param avatar formData file true "图片（≤2MB）"
+// @Success 200 {object} map[string]string "url"
+// @Router /users/avatar [post]
 func (h *Auth) Avatar(c *gin.Context) {
 	url, err := upload.SaveImage(c, "avatar", "avatar", 2<<20)
 	if err != nil {
@@ -33,6 +40,13 @@ func (h *Auth) Avatar(c *gin.Context) {
 }
 
 // BackgroundUpload POST /api/users/background-upload（protect + 5MB）。
+// @Summary 上传背景图
+// @Tags 用户
+// @Security bearerAuth
+// @Accept multipart/form-data
+// @Param image formData file true "图片（≤5MB）"
+// @Success 200 {object} map[string]string "url"
+// @Router /users/background-upload [post]
 func (h *Auth) BackgroundUpload(c *gin.Context) {
 	url, err := upload.SaveImage(c, "image", "bg", 5<<20)
 	if err != nil {
@@ -49,6 +63,13 @@ func (h *Auth) BackgroundUpload(c *gin.Context) {
 }
 
 // BackgroundPrefs PUT /api/users/background-prefs（protect）。
+// @Summary 更新背景偏好
+// @Tags 用户
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "enabled/opacity/blur/image"
+// @Success 200 {object} map[string]any "backgroundPrefs"
+// @Router /users/background-prefs [put]
 func (h *Auth) BackgroundPrefs(c *gin.Context) {
 	var req struct {
 		Enabled *bool   `json:"enabled"`
@@ -84,6 +105,13 @@ func (h *Auth) BackgroundPrefs(c *gin.Context) {
 }
 
 // Profile PUT /api/users/profile（protect）。
+// @Summary 更新昵称
+// @Tags 用户
+// @Security bearerAuth
+// @Accept json
+// @Param body body object true "username"
+// @Success 200 {object} map[string]any
+// @Router /users/profile [put]
 func (h *Auth) Profile(c *gin.Context) {
 	var req struct {
 		Username string `json:"username"`
@@ -120,6 +148,12 @@ func (h *Auth) Profile(c *gin.Context) {
 }
 
 // ExportMyData GET /api/users/export-my-data（protect + exportLimiter 3/h）。
+// @Summary 导出个人数据
+// @Tags 用户
+// @Security bearerAuth
+// @Param format query string false "json|csv"
+// @Success 200 {string} string "文件下载"
+// @Router /users/export-my-data [get]
 func (h *Auth) ExportMyData(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	data, err := h.Svc.BuildExportData(c.Request.Context(), user)

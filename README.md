@@ -6,6 +6,18 @@
 - 独立 git 仓库，license AGPL-3.0-or-later
 - module `github.com/xiedada05/furry-drama-be-neo`
 
+## 文档导航（维护者必读）
+
+| 文档 | 内容 |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | 分层架构 + 依赖注入链 + 请求生命周期（从零理解） |
+| [docs/decisions.md](docs/decisions.md) | 架构决策记录 ADR（每个取舍的 Why + 替代方案） |
+| [docs/contributing.md](docs/contributing.md) | 扩展标准模式 + 运行调试 + 代码规范（人工维护指南） |
+| [docs/API.md](docs/API.md) | 手写 API 参考（全部端点 + 错误码 + cookie + 数据结构） |
+| [/api/docs](http://localhost:5000/api/docs) | Swagger UI（运行时，覆盖 42 个端点，非生产） |
+| [docs/behavior-baseline.md](docs/behavior-baseline.md) | Express 行为采样（差分 ground truth） |
+| [AGENTS.md](AGENTS.md) | 接口契约 + 行为铁律（并行开发锚点） |
+
 ## 快速开始
 
 ```bash
