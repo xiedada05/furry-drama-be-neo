@@ -1,7 +1,7 @@
 // Package ipregion 解析 IP 地域，对齐 Express utils/ipRegion.js：
 //   - 本地 IP（127.0.0.1 / ::1 / ::ffff:127.0.0.1）直接返回 "本地"
 //   - 否则外呼 https://ipapi.co/<ip>/json/（5s 超时），拼接 country_name · region · city
-//   - 24h LRU 缓存，上限 1000 条，超出按插入序删最旧
+//   - 缓存用 hashicorp/golang-lru（上限 1000 条）+ 24h TTL（过期条目在命中时淘汰）
 package ipregion
 
 import (
@@ -9,8 +9,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 // cacheTTL 是地域缓存有效期。
@@ -21,72 +22,52 @@ const cacheMax = 1000
 
 // localIPs 是视为本地的 IP（对齐 ipRegion.js）。
 var localIPs = map[string]bool{
-	"127.0.0.1":      true,
-	"::1":            true,
+	"127.0.0.1":        true,
+	"::1":              true,
 	"::ffff:127.0.0.1": true,
 }
 
-// Client 解析 IP 地域；fetch 可注入（测试用）。
-type Client struct {
-	fetch func(ctx context.Context, ip string) string
-	mu    sync.Mutex
-	cache map[string]cacheEntry
-	// order 记录插入序，用于超限淘汰最旧。
-	order []string
-}
-
+// cacheEntry 是缓存的单个地域条目（带过期时间）。
 type cacheEntry struct {
 	region    string
 	expiresAt time.Time
 }
 
-// NewClient 构造 IP 地域客户端。fetch 为空时使用默认 ipapi.co 外呼。
-func NewClient(fetch func(ctx context.Context, ip string) string) *Client {
-	c := &Client{cache: make(map[string]cacheEntry)}
-	if fetch != nil {
-		c.fetch = fetch
-	} else {
-		c.fetch = fetchFromIPAPI
-	}
-	return c
+// Client 解析 IP 地域；fetch 可注入（测试用）。
+type Client struct {
+	fetch func(ctx context.Context, ip string) string
+	cache *lru.Cache[string, cacheEntry]
 }
 
-// GetRegion 返回 IP 地域，带 24h LRU 缓存。
+// NewClient 构造 IP 地域客户端。fetch 为空时使用默认 ipapi.co 外呼。
+func NewClient(fetch func(ctx context.Context, ip string) string) *Client {
+	c, err := lru.New[string, cacheEntry](cacheMax)
+	if err != nil {
+		// 构造参数固定合法，正常不会失败。
+		c, _ = lru.New[string, cacheEntry](cacheMax)
+	}
+	cl := &Client{cache: c}
+	if fetch != nil {
+		cl.fetch = fetch
+	} else {
+		cl.fetch = fetchFromIPAPI
+	}
+	return cl
+}
+
+// GetRegion 返回 IP 地域，带 LRU + 24h TTL 缓存。
 func (c *Client) GetRegion(ctx context.Context, ip string) string {
 	if localIPs[ip] {
 		return "本地"
 	}
-	// 命中缓存
-	c.mu.Lock()
-	if e, ok := c.cache[ip]; ok {
-		c.mu.Unlock()
-		if time.Now().Before(e.expiresAt) {
-			return e.region
+	if v, ok := c.cache.Get(ip); ok {
+		if time.Now().Before(v.expiresAt) {
+			return v.region
 		}
-		// 过期：删除，继续外呼
-		c.mu.Lock()
-		delete(c.cache, ip)
-		c.mu.Unlock()
-		return c.fetchAndCache(ctx, ip)
+		c.cache.Remove(ip) // 过期：淘汰并重新外呼
 	}
-	c.mu.Unlock()
-	return c.fetchAndCache(ctx, ip)
-}
-
-func (c *Client) fetchAndCache(ctx context.Context, ip string) string {
 	region := c.fetch(ctx, ip)
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache[ip] = cacheEntry{region: region, expiresAt: time.Now().Add(cacheTTL)}
-	c.order = append(c.order, ip)
-	// 超限淘汰最旧
-	for len(c.order) > cacheMax {
-		oldest := c.order[0]
-		c.order = c.order[1:]
-		if _, exists := c.cache[oldest]; exists && len(c.cache) > cacheMax {
-			delete(c.cache, oldest)
-		}
-	}
+	c.cache.Add(ip, cacheEntry{region: region, expiresAt: time.Now().Add(cacheTTL)})
 	return region
 }
 
