@@ -8,7 +8,11 @@ function normalizeValue(value, depth = 0) {
   if (typeof value === 'string') {
     return normalizeString(value);
   }
-  if (typeof value === 'number') return value;
+  if (typeof value === 'number') {
+    // 时间戳类字段（Unix 秒）归一化。
+    if (value > 1e9 && value < 1e12) return '<ts>';
+    return value;
+  }
   if (Array.isArray(value)) return value.map((v) => normalizeValue(v, depth + 1));
   if (typeof value === 'object') {
     const out = {};
@@ -20,17 +24,15 @@ function normalizeValue(value, depth = 0) {
   return value;
 }
 
-// 归一化单个字符串：识别 24hex 的 ObjectId、JWT、时间戳、UUID、日期等。
+// 归一化单个字符串：识别 hex（ObjectId/nonce/salt/signature/tokenHash 等）、JWT、时间戳。
 function normalizeString(s) {
   if (!s) return s;
-  // 24 位 hex ObjectId（_id / userId / episodeId 值）
-  if (/^[0-9a-f]{24}$/.test(s)) return '<id>';
+  // 16/24/32/64 hex（ObjectId 24、nonce/salt 24 或 32、signature 64、tokenHash 64）
+  if (/^[0-9a-f]{16}$/.test(s) || /^[0-9a-f]{24}$/.test(s) || /^[0-9a-f]{32}$/.test(s) || /^[0-9a-f]{64}$/.test(s)) return '<hex>';
   // JWT（三段 base64url）
   if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(s) && s.length > 40) return '<jwt>';
   // ISO 时间戳
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z?$/.test(s)) return '<ts>';
-  // 32/64 hex token（csrfToken、salt、nonce、signature、tokenHash）
-  if (/^[0-9a-f]{32}$/.test(s) || /^[0-9a-f]{64}$/.test(s)) return '<hex>';
   return s;
 }
 

@@ -5,15 +5,17 @@ package service
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net"
 	"regexp"
 	"strings"
 	"time"
 
+	altchalib "github.com/altcha-org/altcha-lib-go/v2"
 	"github.com/gin-gonic/gin"
 
-	"github.com/xiedada05/furry-drama-be-neo/internal/altcha"
 	"github.com/xiedada05/furry-drama-be-neo/internal/auth"
 	"github.com/xiedada05/furry-drama-be-neo/internal/code"
 	"github.com/xiedada05/furry-drama-be-neo/internal/config"
@@ -57,18 +59,18 @@ func NewAuthService(cfg *config.Config, repos *repository.Repos, signer *auth.Si
 	}
 }
 
-// AltchaHMACKey 派生 altcha HMAC 密钥：优先配置，缺省 sha256("altcha-"+JWT_SECRET) hex
-// 的 UTF-8 字节（对齐 utils/altcha.js:8）。
-func (s *AuthService) AltchaHMACKey() []byte {
+// AltchaHMACSecret 派生 altcha HMAC 签名密钥字符串：优先配置，
+// 缺省 sha256("altcha-"+JWT_SECRET) 的 hex（对齐 utils/altcha.js:8）。
+func (s *AuthService) AltchaHMACSecret() string {
 	if k := s.Config.JWT.AltchaHMACKey; k != "" {
-		return []byte(k)
+		return k
 	}
 	sum := sha256.Sum256([]byte("altcha-" + s.Config.JWT.Secret))
-	return []byte(hex.EncodeToString(sum[:]))
+	return hex.EncodeToString(sum[:])
 }
 
-// VerifyAltcha 校验 altcha payload；DEV_API_TOKEN 配置且 x-dev-token 匹配时直接通过。
-// 对齐 utils/altcha.js verifyAltcha。
+// VerifyAltcha 校验 altcha payload（官方 altcha-lib-go）；DEV_API_TOKEN 配置且
+// x-dev-token 匹配时直接通过。对齐 utils/altcha.js verifyAltcha。
 func (s *AuthService) VerifyAltcha(payload, devToken string) bool {
 	if s.Config.JWT.DevAPIToken != "" && devToken == s.Config.JWT.DevAPIToken {
 		return true
@@ -76,16 +78,35 @@ func (s *AuthService) VerifyAltcha(payload, devToken string) bool {
 	if payload == "" {
 		return false
 	}
-	ok, _ := altcha.Verify(payload, s.AltchaHMACKey())
-	return ok
+	raw, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return false
+	}
+	var p altchalib.Payload
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return false
+	}
+	res, err := altchalib.VerifySolution(altchalib.VerifySolutionOptions{
+		Challenge:           p.Challenge,
+		Solution:            p.Solution,
+		DeriveKey:           altchalib.DeriveKeySHA(),
+		HMACSignatureSecret: s.AltchaHMACSecret(),
+	})
+	return err == nil && res.Verified
 }
 
-// CreateCaptcha 生成 altcha 挑战（SHA-256, cost 10000, 5min 过期）。
-// 对齐 routes/auth/session.js L76-90。
-func (s *AuthService) CreateCaptcha() (altcha.Challenge, error) {
-	return altcha.CreateChallenge(altcha.ChallengeOpts{
-		Cost:    10000,
-		HMACKey: s.AltchaHMACKey(),
+// CreateCaptcha 生成 altcha 挑战（官方库；SHA-256, cost 10000, keyPrefix "00", 5min 过期）。
+// 对齐 routes/auth/session.js L76-90 与 node 挑战参数。
+func (s *AuthService) CreateCaptcha() (altchalib.Challenge, error) {
+	expires := time.Now().Add(5 * time.Minute)
+	return altchalib.CreateChallenge(altchalib.CreateChallengeOptions{
+		Algorithm:           "SHA-256",
+		DeriveKey:           altchalib.DeriveKeySHA(),
+		Cost:                10000,
+		KeyLength:           32,
+		KeyPrefix:           "00",
+		HMACSignatureSecret: s.AltchaHMACSecret(),
+		ExpiresAt:           &expires,
 	})
 }
 
