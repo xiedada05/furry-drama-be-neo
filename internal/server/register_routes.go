@@ -15,13 +15,13 @@ import (
 // RegisterRoutes 挂载第一段业务路由（认证 + 用户域）到受限流的 /api 路由组下。
 // 每个端点经 MountDual 同时获得 /api 与 /api/v1 镜像；per-endpoint 限流由
 // middleware.RateLimit 施加（内部按 path 判断，v1 不触发端点限流）。
-func RegisterRoutes(d Deps, api *gin.RouterGroup, store ratelimit.Store, opts middleware.RateLimitOpts) {
+func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts) {
 	mail := email.NewClient(d.Config, d.Repos.SiteContents)
 	ipr := ipregion.NewClient(nil)
 	svc := service.NewAuthService(d.Config, d.Repos, d.Signer, mail, ipr)
 	amw := middleware.NewAuth(d.Repos, d.Signer)
 	h := handler.NewAuth(svc, amw, d.Config)
-	rl := func(spec ratelimit.Spec) gin.HandlerFunc { return middleware.RateLimit(store, spec, opts) }
+	rl := func(spec ratelimit.Spec) gin.HandlerFunc { return middleware.RateLimit(spec, opts) }
 
 	router.MountDual(api, "/auth", func(g *gin.RouterGroup) {
 		g.GET("/captcha", rl(ratelimit.CaptchaSpec), h.Captcha)

@@ -69,14 +69,13 @@ func NewApp(d Deps) *gin.Engine {
 	r.Use(middleware.RequestLogger(log, !d.Config.IsDev)) // trustXFF 仅生产
 
 	// ---- 受限流路由组 /api（globalLimiter 300/min，含 /api/v1 与 health）----
-	store := ratelimit.NewSlidingWindow()
 	opts := middleware.RateLimitOpts{
 		TrustXFF:      !d.Config.IsDev,
 		IsDev:         d.Config.IsDev,
 		SkipRateLimit: d.Config.Security.RateLimitSkip,
 	}
 	api := r.Group("/api")
-	api.Use(middleware.RateLimit(store, ratelimit.GlobalSpec, opts))
+	api.Use(middleware.RateLimit(ratelimit.GlobalSpec, opts))
 	api.GET("/health", handler.Health(d.DB))
 
 	// ---- Swagger UI（仅非生产，对齐 Express src/index.js:352-367）----
@@ -86,7 +85,7 @@ func NewApp(d Deps) *gin.Engine {
 	}
 
 	// ---- 双版本业务路由挂载（M2 填充；挂 api 组下以继承 globalLimiter）----
-	RegisterRoutes(d, api, store, opts)
+	RegisterRoutes(d, api, opts)
 
 	// TODO(M1): /uploads 静态服务（7d 缓存 + noindex/nosniff/inline）
 	// TODO(M4): swagger（仅非生产）/api/docs

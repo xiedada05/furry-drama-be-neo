@@ -2,14 +2,14 @@ package middleware
 
 import (
 	"fmt"
-	"math"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	ulule "github.com/ulule/limiter/v3"
+	memory "github.com/ulule/limiter/v3/drivers/store/memory"
 
 	"github.com/xiedada05/furry-drama-be-neo/internal/ratelimit"
 )
@@ -25,7 +25,14 @@ type RateLimitOpts struct {
 	SkipRateLimit bool
 }
 
-// RateLimit 构造一个命名限流中间件（对齐 src/index.js:297-317 的挂载语义）：
+// specLimiter 封装 ulule/limiter（每个命名限流器一个独立 limiter + 内存 store）。
+type specLimiter struct {
+	spec ratelimit.Spec
+	lim  *ulule.Limiter
+}
+
+// RateLimit 构造一个命名限流中间件（对齐 src/index.js:297-317 的挂载语义），
+// 计数由 github.com/ulule/limiter 提供：
 //
 //   - spec.Mounts 为空 → 全局型：匹配 /api 与全部 /api/ 前缀（含 /api/v1/、
 //     /api/health），并跳过 /api/translate 与 /api/auth/captcha 路径
@@ -34,18 +41,23 @@ type RateLimitOpts struct {
 //     【不】匹配 /api/v1/ 前缀（对齐限流挂载不对称铁律）。
 //
 // auth（AuthSpec）在非生产且 SKIP_RATE_LIMIT=1 时整体跳过（对齐 authLimiter.skip）。
-// requestEmailChange 的 key 逐字复刻 Express：恒为 "[object Object]:<newEmail 小写>"
+// requestEmailChange 的 key 逐字复刻 Express：[object Object]:<newEmail 小写>
 // （Express 的 keyGenerator 把请求对象传给了 ipKeyGenerator）。
 //
-// 429 响应体 {"message": <spec.Message>}，并设置 express-rate-limit
-// standardHeaders(draft-6) 等价头：RateLimit-Policy / -Limit / -Remaining / -Reset，
-// 以及 Retry-After。
-func RateLimit(store ratelimit.Store, spec ratelimit.Spec, opts RateLimitOpts) gin.HandlerFunc {
+// 429 响应体 {"message": <spec.Message>}，并设置 express-rate-limit draft-6
+// 等价头：RateLimit-Policy / -Limit / -Remaining / -Reset，以及 Retry-After。
+func RateLimit(spec ratelimit.Spec, opts RateLimitOpts) gin.HandlerFunc {
+	sl := &specLimiter{
+		spec: spec,
+		lim: ulule.New(memory.NewStore(), ulule.Rate{
+			Period: spec.Window,
+			Limit:  int64(spec.Max),
+		}),
+	}
 	global := len(spec.Mounts) == 0
-	windowSeconds := int64(math.Ceil(spec.Window.Seconds()))
+	windowSeconds := int64(spec.Window.Seconds())
 	skipAuth := opts.IsDev && opts.SkipRateLimit
 
-	// 预先归一化端点前缀（"/api"+Mount 与 "/api"+Mount+"/"）。
 	type prefixPair struct{ exact, sub string }
 	var mounts []prefixPair
 	for _, m := range spec.Mounts {
@@ -90,39 +102,30 @@ func RateLimit(store ratelimit.Store, spec ratelimit.Spec, opts RateLimitOpts) g
 			key = spec.Name + ":[object Object]:" + strings.ToLower(newEmailFromBody(c))
 		}
 
-		count, retryAfter, err := store.Inc(key, spec.Window, spec.Max)
+		ctx, err := sl.lim.Get(c.Request.Context(), key)
 		if err != nil {
 			// 存储异常不阻断请求（对齐 express-rate-limit 的降级语义）。
 			c.Next()
 			return
 		}
 
-		remaining := int64(0)
-		if count < spec.Max {
-			remaining = int64(spec.Max - count)
-		}
-		now := time.Now()
-		resetSeconds := now.Add(spec.Window).Unix()
-		if count > spec.Max {
-			// 超限：429，Retry-After / Reset 以最早请求剩余存活时长为准。
-			resetSeconds = now.Add(retryAfter).Unix()
-			setRateLimitHeaders(c, spec.Max, windowSeconds, remaining, resetSeconds)
-			c.Header("Retry-After", strconv.FormatInt(int64(math.Ceil(retryAfter.Seconds())), 10))
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"message": spec.Message})
+		// express-rate-limit draft-6（standardHeaders: true）等价头。
+		c.Header("RateLimit-Policy", fmt.Sprintf("%d;w=%d", spec.Max, windowSeconds))
+		c.Header("RateLimit-Limit", strconv.FormatInt(ctx.Limit, 10))
+		c.Header("RateLimit-Remaining", strconv.FormatInt(ctx.Remaining, 10))
+		c.Header("RateLimit-Reset", strconv.FormatInt(ctx.Reset, 10))
+
+		if ctx.Reached {
+			retryAfter := ctx.Reset - time.Now().Unix()
+			if retryAfter < 0 {
+				retryAfter = 0
+			}
+			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+			c.AbortWithStatusJSON(429, gin.H{"message": spec.Message})
 			return
 		}
-
-		setRateLimitHeaders(c, spec.Max, windowSeconds, remaining, resetSeconds)
 		c.Next()
 	}
-}
-
-// setRateLimitHeaders 设置 express-rate-limit draft-6（standardHeaders: true）等价头。
-func setRateLimitHeaders(c *gin.Context, max int, windowSeconds, remaining, resetSeconds int64) {
-	c.Header("RateLimit-Policy", fmt.Sprintf("%d;w=%d", max, windowSeconds))
-	c.Header("RateLimit-Limit", strconv.Itoa(max))
-	c.Header("RateLimit-Remaining", strconv.FormatInt(remaining, 10))
-	c.Header("RateLimit-Reset", strconv.FormatInt(resetSeconds, 10))
 }
 
 // newEmailFromBody 读取请求体中 newEmail 字段（对齐 req.body?.newEmail || 'unknown'）。
