@@ -30,6 +30,11 @@ type Repos struct {
 	Feedbacks       *FeedbackRepo
 	CreatorProfiles *CreatorProfileRepo
 	Episodes        *EpisodeRepo
+	SingleEpisodes  *SingleEpisodeRepo
+	EpisodeVersions *EpisodeVersionRepo
+	Folders         *FolderRepo
+	SavedFolders    *SavedFolderRepo
+	Series          *SeriesRepo
 }
 
 // NewRepos 基于已连接的数据库构造 Repos。
@@ -52,6 +57,11 @@ func NewRepos(db *mongo.Database, loginMaxAttempts, loginLockMinutes int) *Repos
 		Feedbacks:       NewFeedbackRepo(db.Collection("feedbacks")),
 		CreatorProfiles: NewCreatorProfileRepo(db.Collection("creatorprofiles")),
 		Episodes:        NewEpisodeRepo(db.Collection("episodes")),
+		SingleEpisodes:  NewSingleEpisodeRepo(db.Collection("singleepisodes")),
+		EpisodeVersions: NewEpisodeVersionRepo(db.Collection("episodeversions")),
+		Folders:         NewFolderRepo(db.Collection("folders")),
+		SavedFolders:    NewSavedFolderRepo(db.Collection("savedfolders")),
+		Series:          NewSeriesRepo(db.Collection("series")),
 	}
 }
 

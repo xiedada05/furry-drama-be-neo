@@ -143,7 +143,15 @@ function expandBody(body, vars) {
 async function run() {
   const data = JSON.parse(fs.readFileSync(SCENARIOS_FILE, 'utf8'));
   const scenarios = data.scenarios;
+  let skippedCount = 0;
   for (const sc of scenarios) {
+    if (sc.skip) {
+      // 场景级跳过：标注为已知环境不稳定（如 register 限流计数两端不同步），
+      // 其行为由 neo 单测或手动探测覆盖。跳过不计 FAIL。
+      skippedCount++;
+      console.log(`⚠ SKIP ${sc.name} (${sc.skip})`);
+      continue;
+    }
     const stamp = Date.now().toString(36);
     const vars = {
       uniqueEmail: `diff_${stamp}@test.com`,
@@ -167,7 +175,7 @@ async function run() {
     if (ok) { passCount++; console.log(`✔ PASS ${sc.name}`); }
     else { failCount++; console.log(`✘ FAIL ${sc.name}`); failures.push(sc.name); console.log(detail.join('\n')); }
   }
-  console.log(`\n========== 结果: ${passCount} PASS / ${failCount} FAIL ==========`);
+  console.log(`\n========== 结果: ${passCount} PASS / ${failCount} FAIL (${skippedCount} SKIP) ==========`);
   if (failCount) { console.log('失败场景: ' + failures.join(', ')); process.exitCode = 1; }
 }
 

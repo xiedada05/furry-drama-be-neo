@@ -35,7 +35,7 @@ func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts)
 		g.POST("/verify-device", rl(ratelimit.TwoFactorSpec), h.VerifyDevice)
 		g.POST("/confirm-device-login", rl(ratelimit.TwoFactorSpec), h.ConfirmDeviceLogin)
 		g.POST("/login-2fa", rl(ratelimit.TwoFactorSpec), h.Login2FA)
-		g.PUT("/change-password", amw.Protect(), rl(ratelimit.PasswordResetSpec), h.ChangePassword)
+		g.PUT("/change-password", rl(ratelimit.PasswordResetSpec), amw.Protect(), h.ChangePassword)
 		g.POST("/forgot-password", rl(ratelimit.PasswordResetSpec), h.ForgotPassword)
 		g.POST("/reset-password", rl(ratelimit.PasswordResetSpec), h.ResetPassword)
 		g.PUT("/change-email", amw.Protect("superadmin"), amw.RequireEmailChanged(), rl(ratelimit.ChangeEmailSpec), h.ChangeEmail)
@@ -76,4 +76,29 @@ func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts)
 		g.PUT("/profile", amw.Protect(), h.Profile)
 		g.GET("/export-my-data", amw.Protect(), rl(ratelimit.ExportSpec), h.ExportMyData)
 	})
+
+	// ---- 内容域（挂载前缀对照 backend/src/index.js routeMounts）----
+	ep := handler.NewEpisodes(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/episodes", ep.Register)
+
+	se := handler.NewSeries(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/series", se.Register)
+
+	fw := handler.NewFollows(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/follows", fw.Register)
+
+	fv := handler.NewFavorites(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/favorites", fv.Register)
+
+	fo := handler.NewFolders(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/folders", fo.Register)
+
+	sf := handler.NewSavedFolders(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/saved-folders", sf.Register)
+
+	hi := handler.NewHistories(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/histories", hi.Register)
+
+	ra := handler.NewRatings(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/ratings", ra.Register)
 }
