@@ -105,6 +105,27 @@
       { "method": "GET", "path": "/api/histories/continue-watching" },
       { "method": "GET", "path": "/api/ratings/check/000000000000000000000001" },
       { "method": "GET", "path": "/api/episodes/not-an-id/user-status" }
-    ] }
+    ] },
+    { "name": "remaining-announcements-list", "steps": [{ "method": "GET", "path": "/api/announcements" }] },
+    { "name": "remaining-announcements-v1", "steps": [{ "method": "GET", "path": "/api/v1/announcements" }] },
+    { "name": "remaining-wallpapers-list", "steps": [{ "method": "GET", "path": "/api/wallpapers" }] },
+    { "name": "remaining-friendlinks-list", "steps": [{ "method": "GET", "path": "/api/friend-links" }] },
+    { "name": "remaining-categories-list", "steps": [{ "method": "GET", "path": "/api/categories" }] },
+    { "name": "remaining-announcements-invalid-id", "steps": [{ "method": "GET", "path": "/api/announcements/not-an-id" }] },
+    { "name": "remaining-protect-401", "steps": [
+      { "method": "GET", "path": "/api/notifications/unread-count" },
+      { "method": "GET", "path": "/api/notifications/list" },
+      { "method": "GET", "path": "/api/stats" },
+      { "method": "GET", "path": "/api/reports" },
+      { "method": "GET", "path": "/api/review" },
+      { "method": "GET", "path": "/api/feedback" },
+      { "method": "GET", "path": "/api/audit-logs" },
+      { "method": "GET", "path": "/api/versions" },
+      { "method": "GET", "path": "/api/auto-status" },
+      { "method": "GET", "path": "/api/backup" }
+    ] },
+    { "name": "remaining-activity-unauth", "steps": [{ "method": "GET", "path": "/api/activity" }] },
+    { "name": "remaining-rss-feed", "steps": [{ "method": "GET", "path": "/api/rss" }] },
+    { "name": "remaining-site-content-unauth", "steps": [{ "method": "GET", "path": "/api/site-content" }] }
   ]
 }

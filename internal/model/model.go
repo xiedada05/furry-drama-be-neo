@@ -19,29 +19,31 @@ import (
 
 // User 对应用户文档（models/User.js）。
 type User struct {
-	ID                 primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
-	AccountID          string             `bson:"accountId" json:"accountId"`
-	Username           string             `bson:"username" json:"username"`
-	Email              string             `bson:"email" json:"email"`
-	Password           string             `bson:"password" json:"-"`
-	Avatar             string             `bson:"avatar" json:"avatar"`
-	DeviceInfo         DeviceInfo         `bson:"deviceInfo" json:"deviceInfo"`
-	LastLoginAt        *time.Time         `bson:"lastLoginAt" json:"lastLoginAt"`
-	LastLoginIP        string             `bson:"lastLoginIp" json:"lastLoginIp"`
-	LastLoginRegion    string             `bson:"lastLoginRegion" json:"lastLoginRegion"`
-	DeletionRequestedAt *time.Time        `bson:"deletionRequestedAt" json:"deletionRequestedAt"`
-	IsEmailVerified    bool               `bson:"isEmailVerified" json:"isEmailVerified"`
-	Role               string             `bson:"role" json:"role"`
-	PasswordChangedAt  *time.Time         `bson:"passwordChangedAt" json:"passwordChangedAt"`
-	TwoFactorEnabled   bool               `bson:"twoFactorEnabled" json:"twoFactorEnabled"`
-	TwoFactorSecret    string             `bson:"twoFactorSecret" json:"-"`
-	TwoFactorBackupCodes []string         `bson:"twoFactorBackupCodes" json:"-"`
+	ID                     primitive.ObjectID     `bson:"_id,omitempty" json:"_id"`
+	AccountID              string                 `bson:"accountId" json:"accountId"`
+	Username               string                 `bson:"username" json:"username"`
+	Email                  string                 `bson:"email" json:"email"`
+	Password               string                 `bson:"password" json:"-"`
+	Avatar                 string                 `bson:"avatar" json:"avatar"`
+	DeviceInfo             DeviceInfo             `bson:"deviceInfo" json:"deviceInfo"`
+	LastLoginAt            *time.Time             `bson:"lastLoginAt" json:"lastLoginAt"`
+	LastLoginIP            string                 `bson:"lastLoginIp" json:"lastLoginIp"`
+	LastLoginRegion        string                 `bson:"lastLoginRegion" json:"lastLoginRegion"`
+	DeletionRequestedAt    *time.Time             `bson:"deletionRequestedAt" json:"deletionRequestedAt"`
+	IsEmailVerified        bool                   `bson:"isEmailVerified" json:"isEmailVerified"`
+	Role                   string                 `bson:"role" json:"role"`
+	PasswordChangedAt      *time.Time             `bson:"passwordChangedAt" json:"passwordChangedAt"`
+	TwoFactorEnabled       bool                   `bson:"twoFactorEnabled" json:"twoFactorEnabled"`
+	TwoFactorSecret        string                 `bson:"twoFactorSecret" json:"-"`
+	TwoFactorBackupCodes   []string               `bson:"twoFactorBackupCodes" json:"-"`
 	EmailNotificationPrefs EmailNotificationPrefs `bson:"emailNotificationPrefs" json:"emailNotificationPrefs"`
-	BackgroundPrefs    BackgroundPrefs    `bson:"backgroundPrefs" json:"backgroundPrefs"`
-	PersonalWallpapers []Wallpaper        `bson:"personalWallpapers" json:"personalWallpapers"`
-	LoginAttempts      int                `bson:"loginAttempts" json:"-"`
-	LockUntil          int64              `bson:"lockUntil" json:"-"`
-	CreatedAt          time.Time          `bson:"createdAt" json:"createdAt"`
+	BackgroundPrefs        BackgroundPrefs        `bson:"backgroundPrefs" json:"backgroundPrefs"`
+	PersonalWallpapers     []Wallpaper            `bson:"personalWallpapers" json:"personalWallpapers"`
+	LoginAttempts          int                    `bson:"loginAttempts" json:"-"`
+	LockUntil              int64                  `bson:"lockUntil" json:"-"`
+	CreatedAt              time.Time              `bson:"createdAt" json:"createdAt"`
+	// VersionKey 是 mongoose 的 __v。
+	VersionKey int `bson:"__v,omitempty" json:"__v"`
 }
 
 // DeviceInfo 设备信息子文档（User 与 UserSession 共用）。
@@ -62,13 +64,13 @@ type DeviceInfo struct {
 
 // EmailNotificationPrefs 邮件通知偏好（7 键全默认 true）。
 type EmailNotificationPrefs struct {
-	EpisodeUpdate  bool `bson:"episodeUpdate" json:"episodeUpdate"`
-	NewDeviceLogin bool `bson:"newDeviceLogin" json:"newDeviceLogin"`
-	FeedbackReply  bool `bson:"feedbackReply" json:"feedbackReply"`
+	EpisodeUpdate    bool `bson:"episodeUpdate" json:"episodeUpdate"`
+	NewDeviceLogin   bool `bson:"newDeviceLogin" json:"newDeviceLogin"`
+	FeedbackReply    bool `bson:"feedbackReply" json:"feedbackReply"`
 	FriendLinkStatus bool `bson:"friendLinkStatus" json:"friendLinkStatus"`
 	FriendLinkApply  bool `bson:"friendLinkApply" json:"friendLinkApply"`
-	Announcement   bool `bson:"announcement" json:"announcement"`
-	ReviewResult   bool `bson:"reviewResult" json:"reviewResult"`
+	Announcement     bool `bson:"announcement" json:"announcement"`
+	ReviewResult     bool `bson:"reviewResult" json:"reviewResult"`
 }
 
 // DefaultEmailNotificationPrefs 返回 7 键全 true 的默认偏好。
@@ -76,7 +78,7 @@ func DefaultEmailNotificationPrefs() EmailNotificationPrefs {
 	return EmailNotificationPrefs{true, true, true, true, true, true, true}
 }
 
-// BackgroundPrefs 背景偏好子文档（默认 image:'' enabled:false opacity:30 blur:0）。
+// BackgroundPrefs 背景偏好子文档（默认 image:” enabled:false opacity:30 blur:0）。
 type BackgroundPrefs struct {
 	Image   string `bson:"image" json:"image"`
 	Enabled bool   `bson:"enabled" json:"enabled"`
@@ -120,32 +122,32 @@ type UsedToken struct {
 
 // Notification 通知文档（models/Notification.js）。
 type Notification struct {
-	ID            primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
-	UserID        primitive.ObjectID `bson:"userId" json:"userId"`
-	EpisodeID     *primitive.ObjectID `bson:"episodeId" json:"episodeId,omitempty"`
-	EpisodeTitle  string             `bson:"episodeTitle" json:"episodeTitle"`
-	EpisodeTitleEn string            `bson:"episodeTitleEn" json:"episodeTitleEn"`
-	Type          string             `bson:"type" json:"type"`
-	Link          string             `bson:"link" json:"link"`
-	Message       string             `bson:"message" json:"message"`
-	Metadata      primitive.M        `bson:"metadata" json:"metadata"`
-	IsRead        bool               `bson:"isRead" json:"isRead"`
-	CreatedAt     time.Time          `bson:"createdAt" json:"createdAt"`
+	ID             primitive.ObjectID  `bson:"_id,omitempty" json:"_id"`
+	UserID         primitive.ObjectID  `bson:"userId" json:"userId"`
+	EpisodeID      *primitive.ObjectID `bson:"episodeId" json:"episodeId,omitempty"`
+	EpisodeTitle   string              `bson:"episodeTitle" json:"episodeTitle"`
+	EpisodeTitleEn string              `bson:"episodeTitleEn" json:"episodeTitleEn"`
+	Type           string              `bson:"type" json:"type"`
+	Link           string              `bson:"link" json:"link"`
+	Message        string              `bson:"message" json:"message"`
+	Metadata       primitive.M         `bson:"metadata" json:"metadata"`
+	IsRead         bool                `bson:"isRead" json:"isRead"`
+	CreatedAt      time.Time           `bson:"createdAt" json:"createdAt"`
 }
 
 // AuditLog 审计日志文档（models/AuditLog.js）。
 type AuditLog struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"_id"`
+	ID        primitive.ObjectID  `bson:"_id,omitempty" json:"_id"`
 	AdminID   *primitive.ObjectID `bson:"adminId" json:"adminId"`
-	AdminName string             `bson:"adminName" json:"adminName"`
+	AdminName string              `bson:"adminName" json:"adminName"`
 	UserID    *primitive.ObjectID `bson:"userId" json:"userId"`
-	UserName  string             `bson:"userName" json:"userName"`
-	Action    string             `bson:"action" json:"action"`
-	Target    string             `bson:"target" json:"target"`
-	Details   string             `bson:"details" json:"details"`
-	IP        string             `bson:"ip" json:"ip"`
-	UserAgent string             `bson:"userAgent" json:"userAgent"`
-	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
+	UserName  string              `bson:"userName" json:"userName"`
+	Action    string              `bson:"action" json:"action"`
+	Target    string              `bson:"target" json:"target"`
+	Details   string              `bson:"details" json:"details"`
+	IP        string              `bson:"ip" json:"ip"`
+	UserAgent string              `bson:"userAgent" json:"userAgent"`
+	CreatedAt time.Time           `bson:"createdAt" json:"createdAt"`
 }
 
 // ApiUsage 接口调用统计（models/ApiUsage.js，endpoint+date 唯一）。
@@ -164,6 +166,8 @@ type SiteContent struct {
 	Title     string             `bson:"title" json:"title"`
 	Content   string             `bson:"content" json:"content"`
 	UpdatedAt time.Time          `bson:"updatedAt" json:"updatedAt"`
+	// VersionKey 是 mongoose 的 __v。
+	VersionKey int `bson:"__v,omitempty" json:"__v"`
 }
 
 // Setting 迁移标记集合（src/index.js 使用 db.collection('settings')）。

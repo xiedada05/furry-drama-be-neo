@@ -72,6 +72,8 @@ type Feedback struct {
 	Status    string             `bson:"status" json:"status"`
 	Reply     string             `bson:"reply" json:"reply"`
 	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
+	// VersionKey 是 mongoose 的 __v。
+	VersionKey int `bson:"__v,omitempty" json:"__v"`
 }
 
 // CreatorProfile 创作者资料（models/CreatorProfile.js，曾名 adminId 已迁移为 creatorId）。
@@ -82,9 +84,12 @@ type CreatorProfile struct {
 	Avatar         string             `bson:"avatar" json:"avatar"`
 	Bio            string             `bson:"bio" json:"bio"`
 	SocialLinks    map[string]string  `bson:"socialLinks" json:"socialLinks"`
+	QqGroupLink    string             `bson:"qqGroupLink" json:"qqGroupLink"`
 	ReviewStatus   string             `bson:"reviewStatus" json:"reviewStatus"`
 	ReviewNote     string             `bson:"reviewNote" json:"reviewNote"`
 	PendingChanges primitive.M        `bson:"pendingChanges" json:"pendingChanges"`
 	CreatedAt      time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt      time.Time          `bson:"updatedAt" json:"updatedAt"`
+	// VersionKey 是 mongoose 的 __v。
+	VersionKey int `bson:"__v,omitempty" json:"__v"`
 }

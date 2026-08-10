@@ -101,4 +101,75 @@ func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts)
 
 	ra := handler.NewRatings(d.Repos, d.Config, amw, rl)
 	router.MountDual(api, "/ratings", ra.Register)
+
+	// ---- CMS 域（公告/壁纸/友链，挂载前缀对照 backend/src/index.js routeMounts）----
+	an := handler.NewAnnouncements(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/announcements", an.Register)
+
+	wp := handler.NewWallpapers(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/wallpapers", wp.Register)
+
+	fl := handler.NewFriendLinks(d.Repos, d.Config, amw, rl, mail, svc.VerifyAltcha)
+	router.MountDual(api, "/friend-links", fl.Register)
+
+	// ---- 管理后台 + 审计日志域 ----
+	ad := handler.NewAdmin(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/admin", ad.Register)
+
+	al := handler.NewAuditLogs(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/audit-logs", al.Register)
+
+	// ---- 通知域 ----
+	nt := handler.NewNotifications(d.Repos, d.Config, amw, rl, d.DB)
+	router.MountDual(api, "/notifications", nt.Register)
+
+	// ---- 统计 / 举报 / 审核域（挂载前缀对照 backend/src/index.js routeMounts）----
+	st := handler.NewStats(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/stats", st.Register)
+
+	rp := handler.NewReports(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/reports", rp.Register)
+
+	rv := handler.NewReview(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/review", rv.Register)
+
+	// ---- 分类 / 轮播图 / 后台自动任务 / 版本历史域 ----
+	cat := handler.NewCategories(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/categories", cat.Register)
+
+	bn := handler.NewBanners(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/banners", bn.Register)
+
+	as := handler.NewAutoStatus(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/auto-status", as.Register)
+
+	vs := handler.NewVersions(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/versions", vs.Register)
+
+	// ---- RSS 订阅 / 翻译 / 数据备份域（挂载前缀对照 backend/src/index.js routeMounts）----
+	rs := handler.NewRSS(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/rss", rs.Register)
+
+	tl := handler.NewTranslate(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/translate", tl.Register)
+
+	bk := handler.NewBackup(d.Repos, d.Config, amw, rl, d.DB)
+	router.MountDual(api, "/backup", bk.Register)
+
+	// ---- 创作者中心 / 创作者主页 / 站点内容 / 反馈 / 动态流域
+	// （挂载前缀对照 backend/src/index.js routeMounts）----
+	cr := handler.NewCreator(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/creator", cr.Register)
+
+	cp := handler.NewCreatorProfiles(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/creator-profile", cp.Register)
+
+	sc := handler.NewSiteContents(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/site-content", sc.Register)
+
+	fb := handler.NewFeedback(d.Repos, d.Config, amw, rl, mail)
+	router.MountDual(api, "/feedback", fb.Register)
+
+	ac := handler.NewActivity(d.Repos, d.Config, amw, rl)
+	router.MountDual(api, "/activity", ac.Register)
 }

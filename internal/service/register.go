@@ -89,18 +89,19 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*Register
 		region = s.IPRegion.GetRegion(ctx, in.IP)
 	}
 	user := &model.User{
-		AccountID:          accountID,
-		Username:           username,
-		Email:              email,
-		Password:           hash,
-		IsEmailVerified:    false,
-		DeviceInfo:         di,
-		LastLoginAt:        nil,
-		LastLoginIP:        in.IP,
-		LastLoginRegion:    region,
-		Role:               "user",
+		AccountID:              accountID,
+		Username:               username,
+		Email:                  email,
+		Password:               hash,
+		IsEmailVerified:        false,
+		DeviceInfo:             di,
+		LastLoginAt:            nil,
+		LastLoginIP:            in.IP,
+		LastLoginRegion:        region,
+		Role:                   "user",
 		EmailNotificationPrefs: model.DefaultEmailNotificationPrefs(),
-		BackgroundPrefs:    model.DefaultBackgroundPrefs(),
+		BackgroundPrefs:        model.DefaultBackgroundPrefs(),
+		PersonalWallpapers:     []model.Wallpaper{},
 	}
 	last := time.Now()
 	user.LastLoginAt = &last

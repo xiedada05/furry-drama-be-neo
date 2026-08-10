@@ -35,6 +35,11 @@ type Repos struct {
 	Folders         *FolderRepo
 	SavedFolders    *SavedFolderRepo
 	Series          *SeriesRepo
+	Categories      *CategoryRepo
+	Banners         *BannerRepo
+	Announcements   *AnnouncementRepo
+	Wallpapers      *WallpaperRepo
+	FriendLinks     *FriendLinkRepo
 }
 
 // NewRepos 基于已连接的数据库构造 Repos。
@@ -62,6 +67,11 @@ func NewRepos(db *mongo.Database, loginMaxAttempts, loginLockMinutes int) *Repos
 		Folders:         NewFolderRepo(db.Collection("folders")),
 		SavedFolders:    NewSavedFolderRepo(db.Collection("savedfolders")),
 		Series:          NewSeriesRepo(db.Collection("series")),
+		Categories:      NewCategoryRepo(db.Collection("categories")),
+		Banners:         NewBannerRepo(db.Collection("banners")),
+		Announcements:   NewAnnouncementRepo(db.Collection("announcements")),
+		Wallpapers:      NewWallpaperRepo(db.Collection("systemwallpapers")),
+		FriendLinks:     NewFriendLinkRepo(db.Collection("friendlinks")),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 
@@ -108,14 +109,22 @@ func (r *UserRepo) ExistsByAccountID(ctx context.Context, accountID string) (boo
 }
 
 // Create 插入用户；唯一键冲突返回 IsDuplicateKey(err)。
+// 对齐 Mongoose save()：落库后把驱动生成的 _id 回填到 struct，
+// 使调用方随后可读 u.ID（bson omitempty 会省略零值 _id，驱动不会自动回填）。
 func (r *UserRepo) Create(ctx context.Context, u *model.User) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.InsertOne(ctx, u)
+	res, err := r.coll.InsertOne(ctx, u)
 	if mongo.IsDuplicateKeyError(err) {
 		return errDuplicateKey
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if oid, ok := res.InsertedID.(primitive.ObjectID); ok {
+		u.ID = oid
+	}
+	return nil
 }
 
 // Save 整文档覆盖保存（对齐 user.save()）。
