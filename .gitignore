@@ -1,1 +1,4 @@
 bin/
+dev.ini
+.env
+uploads/

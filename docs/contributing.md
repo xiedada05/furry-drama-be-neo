@@ -8,18 +8,21 @@
 # 前置：Go ≥1.26、mongod 于 127.0.0.1:27017
 go build -o bin/furry-drama-be-neo ./cmd/server
 
-# 开发（env 覆盖，无需 ini）
+# 开发（.env 自动加载，无需 --config）
+./bin/furry-drama-be-neo
+
+# 或开发（env 覆盖，无需 ini）
 JWT_SECRET=<≥32字符> MONGO_URI=mongodb://127.0.0.1:27017/furry_drama_tracker \
 NODE_ENV=development DEV_API_TOKEN=test-dev-token SKIP_RATE_LIMIT=1 \
 ./bin/furry-drama-be-neo --listen=tcp:0.0.0.0:5000
 
-# 生产（ini 配置）
-./bin/furry-drama-be-neo --config=/etc/furry-drama-be-neo.ini
+# 生产（ini 配置，路径按 OS 区分）
+./bin/furry-drama-be-neo --config=/etc/furry-drama-tracker/backend.ini
 # Unix socket（systemd 推荐）
-./bin/furry-drama-be-neo --config=/etc/furry-drama-be-neo.ini --listen=unix:/run/furry-drama-be-neo.sock
+./bin/furry-drama-be-neo --config=/etc/furry-drama-tracker/backend.ini --listen=unix:/run/furry-drama-be-neo.sock
 ```
 
-配置模板 `deploy/furry-drama-be-neo.ini`；systemd unit `deploy/furry-drama-be-neo.service`；nohup `deploy/run.sh`。
+配置优先级：**真实环境变量 > `.env` 文件 > ini 配置文件 > 默认值**。开发时在当前目录放一个 `.env`（格式同 dotenv）即可零配置启动。配置模板 `deploy/furry-drama-be-neo.ini`；systemd unit `deploy/furry-drama-be-neo.service`；nohup `deploy/run.sh`。
 
 ## 测试
 

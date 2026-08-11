@@ -5,7 +5,7 @@
 set -e
 
 BIN="$(dirname "$0")/../bin/furry-drama-be-neo"
-CONFIG="${CONFIG:-/etc/furry-drama-be-neo.ini}"
+CONFIG="${CONFIG:-/etc/furry-drama-tracker/backend.ini}"
 LISTEN="${1:-tcp:0.0.0.0:5000}"
 LOG="/var/log/furry-drama-be-neo.log"
 

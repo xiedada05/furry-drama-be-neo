@@ -12,7 +12,7 @@
 
 ## 1. 配置映射（Express `.env` → neo `ini`）
 
-复制模板并逐项映射到 `/etc/furry-drama-be-neo.ini`：
+复制模板并逐项映射到 `/etc/furry-drama-tracker/backend.ini`（Linux 默认路径）：
 
 | Express `.env` | neo `[section].key` | 必填 | 说明 |
 |---|---|---|---|
@@ -51,9 +51,10 @@ export GOPROXY=https://goproxy.cn,direct GOFLAGS=-mod=readonly
 go build -o bin/furry-drama-be-neo ./cmd/server
 
 # 2) 写配置
-cp deploy/furry-drama-be-neo.ini /etc/furry-drama-be-neo.ini
+mkdir -p /etc/furry-drama-tracker
+cp deploy/furry-drama-be-neo.ini /etc/furry-drama-tracker/backend.ini
 #   按第 1 节映射填写；文件权限 600
-chmod 600 /etc/furry-drama-be-neo.ini
+chmod 600 /etc/furry-drama-tracker/backend.ini
 
 # 3) 上传目录
 mkdir -p /var/www/furry-drama-tracker/uploads

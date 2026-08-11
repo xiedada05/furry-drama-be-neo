@@ -1,18 +1,24 @@
 // Package config 加载 neo-server 配置：ini 为主，环境变量覆盖。
 //
 // 设计（用户已确认 Q10/Q14）：
-//   - 默认读取 /etc/furry-drama-be-neo.ini，--config=/path 覆盖
+//   - 默认读取 OS 对应的默认路径（Linux: /etc/furry-drama-tracker/backend.ini，macOS: /Library/Application Support/furry-drama-tracker/backend.ini，Windows: C:\ProgramData\furry-drama-tracker\backend.ini），--config=/path 覆盖
 //   - 同名环境变量优先于 ini（供 systemd 注入密钥、CI 注入 DEV_API_TOKEN 等）
 //   - 启动致命校验：缺少 JWT secret 或 MONGO_URI，或 JWT secret < 32 字符 → 退出
 //
 // 兼容原 .env 变量名：JWT_SECRET / MONGO_URI / ENCRYPTION_KEY / ALTCHA_HMAC_KEY /
 // FRONTEND_URL / SITE_URL / ALLOWED_ORIGINS / EMAIL_* / VAPID_* / DEMO_EMAILS /
 // DEV_API_TOKEN / PORT / NODE_ENV / SKIP_RATE_LIMIT。
+//
+// .env 文件支持：启动时自动读取当前目录的 .env 文件（如果存在），
+// 将其中未在真实环境中设置的变量注入到 os.Environ，实现与旧 Express 后端 dotenv 的向下兼容。
+// 优先级：真实环境变量 > .env 文件 > ini 配置文件。
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -21,8 +27,6 @@ import (
 )
 
 const (
-	// DefaultPath 是配置文件默认路径。
-	DefaultPath = "/etc/furry-drama-be-neo.ini"
 	// MinSecretLen 对齐 Express 启动校验（src/index.js:58-61）。
 	MinSecretLen = 32
 
@@ -102,10 +106,15 @@ type SecurityConfig struct {
 	RateLimitSkip    bool
 }
 
-// Load 加载配置：先读 ini（path 为空则尝试 DefaultPath，缺文件静默跳过），
-// 再用环境变量覆盖同名项。
+// Load 加载配置：先读 .env（如果存在），再读 ini（path 为空则尝试 DefaultPath，
+// 缺文件静默跳过），最后用环境变量覆盖同名项。
+//
+// 优先级：真实环境变量 > .env 文件 > ini 配置文件 > 默认值。
 func Load(path string) (*Config, error) {
 	cfg := defaults()
+
+	// 0) 加载 .env 文件（当前目录，如果存在）——仅为未在真实环境中设置的变量注入值
+	loadDotEnv()
 
 	// 1) ini
 	if path == "" {
@@ -119,7 +128,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("配置文件不存在: %s", path)
 	}
 
-	// 2) env 覆盖
+	// 2) env 覆盖（真实环境变量 + .env 注入的变量）
 	applyEnv(cfg)
 
 	// 3) 派生 IsDev
@@ -130,6 +139,65 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// loadDotEnv 读取当前目录的 .env 文件（如果存在），将其中未在真实环境中
+// 已设置的变量注入到 os.Environ。格式兼容 dotenv：KEY=VALUE，支持 # 注释、
+// export 前缀、引号包裹的值。文件不存在时静默跳过。
+//
+// 仅注入尚未设置的变量，因此真实环境变量优先级高于 .env 文件。
+func loadDotEnv() {
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		return // 文件不存在，静默跳过
+	}
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// 跳过空行和注释
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// 去除可选的 export 前缀
+		line = strings.TrimPrefix(line, "export ")
+		// 按第一个 = 分割
+		idx := strings.Index(line, "=")
+		if idx < 0 {
+			continue
+		}
+		key := strings.TrimSpace(line[:idx])
+		val := strings.TrimSpace(line[idx+1:])
+		// 去除引号包裹
+		if len(val) >= 2 {
+			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
+				val = val[1 : len(val)-1]
+			}
+		}
+		if key == "" {
+			continue
+		}
+		// 仅在真实环境中尚未设置时注入
+		if _, exists := os.LookupEnv(key); !exists {
+			_ = os.Setenv(key, val)
+		}
+	}
+}
+
+// DefaultPath 是配置文件默认路径，按 OS 区分：
+//   - Windows:  C:\ProgramData\furry-drama-tracker\backend.ini
+//   - Linux:    /etc/furry-drama-tracker/backend.ini
+//   - macOS:    /Library/Application Support/furry-drama-tracker/backend.ini
+var DefaultPath string
+
+func init() {
+	switch runtime.GOOS {
+	case "windows":
+		DefaultPath = `C:\ProgramData\furry-drama-tracker\backend.ini`
+	case "darwin":
+		DefaultPath = "/Library/Application Support/furry-drama-tracker/backend.ini"
+	default: // linux 及其它 Unix
+		DefaultPath = "/etc/furry-drama-tracker/backend.ini"
+	}
 }
 
 // defaults 返回带默认值的配置。

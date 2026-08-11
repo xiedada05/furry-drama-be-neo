@@ -27,9 +27,9 @@
 
 ## ADR-004 ini 配置为主 + 环境变量覆盖
 
-- **决策**：配置默认读 `/etc/furry-drama-be-neo.ini`，`--config=` 覆盖，**同名环境变量优先于 ini**。启动致命校验：缺 JWT_SECRET（或 <32 字符）/MONGO_URI 退出。
-- **背景**：用户明确反感几十个环境变量矩阵（"这么多环境变量真是烦死了"），要求 ini 分 section。
-- **取舍**：ini 好读好改；保留 env 覆盖供 systemd 注入密钥、CI 注入 DEV_API_TOKEN。`IsDev` = `NODE_ENV != production`，控制 cookie secure、错误栈、CORS 信任 XFF 等。
+- **决策**：配置优先级从高到低：**真实环境变量 > `.env` 文件 > ini 配置文件 > 默认值**。ini 默认按 OS 读取（Linux: `/etc/furry-drama-tracker/backend.ini`，macOS: `/Library/Application Support/furry-drama-tracker/backend.ini`，Windows: `C:\ProgramData\furry-drama-tracker\backend.ini`），`--config=` 覆盖。启动时自动加载当前目录的 `.env` 文件（仅为未在真实环境中设置的变量注入值），兼容旧 Express 后端的 dotenv 用法。启动致命校验：缺 JWT_SECRET（或 <32 字符）/MONGO_URI 退出。
+- **背景**：用户明确反感几十个环境变量矩阵（"这么多环境变量真是烦死了"），要求 ini 分 section。同时希望保留旧 Express 后端 `.env` 的开发体验（放一个 `.env` 就能跑），避免开发时还要手敲 `--config=`。
+- **取舍**：ini 好读好改（生产）；`.env` 零配置启动（开发）；保留 env 覆盖供 systemd 注入密钥、CI 注入 DEV_API_TOKEN。`IsDev` = `NODE_ENV != production`，控制 cookie secure、错误栈、CORS 信任 XFF 等。
 
 ## ADR-005 行为一致性三重锁（差分测试为 ground truth）
 

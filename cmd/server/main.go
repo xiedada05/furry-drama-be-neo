@@ -2,7 +2,7 @@
 //
 // 用法：
 //
-//	bin/server --config=/etc/furry-drama-be-neo.ini --listen=tcp:0.0.0.0:5000
+//	bin/server --config=/etc/furry-drama-tracker/backend.ini --listen=tcp:0.0.0.0:5000
 //	bin/server --listen=unix:/run/furry-drama-be-neo.sock   # Unix socket（"@name" 为 abstract）
 //
 // 启动顺序：加载配置 → 连接 MongoDB → 装配仓储/签名器 → 装配 Gin → 启动 HTTP →

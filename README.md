@@ -23,22 +23,42 @@
 
 ```bash
 go build -o bin/furry-drama-be-neo ./cmd/server
-# 开发（env 覆盖）
+# 开发（.env 自动加载，无需 --config）
+./bin/furry-drama-be-neo
+# 或开发（env 覆盖）
 JWT_SECRET=... MONGO_URI=mongodb://127.0.0.1:27017/furry_drama_tracker NODE_ENV=development \
   ./bin/furry-drama-be-neo --listen=tcp:0.0.0.0:5000
-# 或生产（ini 配置）
-./bin/furry-drama-be-neo --config=/etc/furry-drama-be-neo.ini
+# 或生产（ini 配置，路径按 OS 区分）
+./bin/furry-drama-be-neo --config=/etc/furry-drama-tracker/backend.ini
 # Unix socket
-./bin/furry-drama-be-neo --config=/etc/furry-drama-be-neo.ini --listen=unix:/run/furry-drama-be-neo.sock
+./bin/furry-drama-be-neo --config=/etc/furry-drama-tracker/backend.ini --listen=unix:/run/furry-drama-be-neo.sock
 ```
 
 ## 配置
 
-默认读取 `/etc/furry-drama-be-neo.ini`，`--config=` 覆盖，**同名环境变量优先**。section：`[server] [database] [jwt] [email] [vapid] [security]`。模板见 `deploy/furry-drama-be-neo.ini`。
+支持三种配置来源，优先级从高到低：**真实环境变量 > `.env` 文件 > ini 配置文件 > 默认值**。
+
+### `.env` 文件（开发推荐）
+
+启动时自动读取当前目录的 `.env` 文件（如果存在），将其中**未在真实环境中设置**的变量注入。格式兼容 dotenv（`KEY=VALUE`，支持 `#` 注释、`export` 前缀、引号包裹），实现与旧 Express 后端 `dotenv` 的向下兼容。
+
+### ini 配置文件（生产推荐）
+
+默认按 OS 读取对应路径的 ini 文件，`--config=` 覆盖：
+
+| OS | 默认路径 |
+|---|---|
+| Linux | `/etc/furry-drama-tracker/backend.ini` |
+| macOS | `/Library/Application Support/furry-drama-tracker/backend.ini` |
+| Windows | `C:\ProgramData\furry-drama-tracker\backend.ini` |
+
+section：`[server] [database] [jwt] [email] [vapid] [security]`。模板见 `deploy/furry-drama-be-neo.ini`。
+
+### 环境变量
+
+**同名环境变量优先于 ini 和 .env**（供 systemd 注入密钥、CI 注入 DEV_API_TOKEN 等）。兼容旧 `.env` 变量名：`JWT_SECRET MONGO_URI ENCRYPTION_KEY ALTCHA_HMAC_KEY FRONTEND_URL SITE_URL ALLOWED_ORIGINS EMAIL_* VAPID_* DEMO_EMAILS DEV_API_TOKEN PORT NODE_ENV SKIP_RATE_LIMIT`。
 
 启动致命校验：缺 `JWT_SECRET`（或 < 32 字符）/ `MONGO_URI` → 退出 1。
-
-环境变量兼容旧 `.env`：`JWT_SECRET MONGO_URI ENCRYPTION_KEY ALTCHA_HMAC_KEY FRONTEND_URL SITE_URL ALLOWED_ORIGINS EMAIL_* VAPID_* DEMO_EMAILS DEV_API_TOKEN PORT NODE_ENV SKIP_RATE_LIMIT`。
 
 ## 测试与验证
 

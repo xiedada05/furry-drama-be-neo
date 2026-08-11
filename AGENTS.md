@@ -19,11 +19,13 @@ go run ./cmd/server --listen=unix:/run/furry-drama-be-neo.sock   # Unix socket
 
 ## 配置
 
-ini 为主（默认 `/etc/furry-drama-be-neo.ini`），`--config=` 覆盖，**同名环境变量覆盖 ini**。
-section：`[server] [database] [jwt] [email] [vapid] [security]`。
-启动致命校验：缺 `JWT_SECRET`/`MONGO_URI` 或 secret < 32 字符 → 退出 1。
+优先级从高到低：**真实环境变量 > `.env` 文件 > ini 配置文件 > 默认值**。
 
-环境变量兼容旧 `.env`：`JWT_SECRET MONGO_URI ENCRYPTION_KEY ALTCHA_HMAC_KEY FRONTEND_URL SITE_URL ALLOWED_ORIGINS EMAIL_* VAPID_* DEMO_EMAILS DEV_API_TOKEN PORT NODE_ENV SKIP_RATE_LIMIT`。
+- **`.env` 文件**：启动时自动读取当前目录的 `.env`（如果存在），仅为未在真实环境中设置的变量注入值。兼容 dotenv 格式（`KEY=VALUE`、`#` 注释、`export` 前缀、引号包裹）。
+- **ini 配置文件**：默认按 OS 读取（Linux: `/etc/furry-drama-tracker/backend.ini`，macOS: `/Library/Application Support/furry-drama-tracker/backend.ini`，Windows: `C:\ProgramData\furry-drama-tracker\backend.ini`），`--config=` 覆盖。section：`[server] [database] [jwt] [email] [vapid] [security]`。
+- **环境变量**：同名环境变量优先于 ini 和 `.env`（供 systemd 注入密钥、CI 注入 DEV_API_TOKEN 等）。兼容旧 `.env` 变量名：`JWT_SECRET MONGO_URI ENCRYPTION_KEY ALTCHA_HMAC_KEY FRONTEND_URL SITE_URL ALLOWED_ORIGINS EMAIL_* VAPID_* DEMO_EMAILS DEV_API_TOKEN PORT NODE_ENV SKIP_RATE_LIMIT`。
+
+启动致命校验：缺 `JWT_SECRET`/`MONGO_URI` 或 secret < 32 字符 → 退出 1。
 
 ## 目录结构
 
