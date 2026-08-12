@@ -15,7 +15,6 @@
 package config
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"runtime"
@@ -23,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/ini.v1"
 )
 
@@ -115,7 +115,6 @@ func Load(path string) (*Config, error) {
 
 	// 0) 加载 .env 文件（当前目录，如果存在）——仅为未在真实环境中设置的变量注入值
 	loadDotEnv()
-
 	// 1) ini
 	if path == "" {
 		path = DefaultPath
@@ -142,45 +141,13 @@ func Load(path string) (*Config, error) {
 }
 
 // loadDotEnv 读取当前目录的 .env 文件（如果存在），将其中未在真实环境中
-// 已设置的变量注入到 os.Environ。格式兼容 dotenv：KEY=VALUE，支持 # 注释、
-// export 前缀、引号包裹的值。文件不存在时静默跳过。
+// 已设置的变量注入到 os.Environ。委托给 godotenv：支持 # 注释、export 前缀、
+// 引号包裹的值等 dotenv 语法。文件不存在时静默跳过。
 //
-// 仅注入尚未设置的变量，因此真实环境变量优先级高于 .env 文件。
+// godotenv.Load 默认 Overload=false，仅在变量尚未设置时注入，
+// 因此真实环境变量优先级高于 .env 文件。
 func loadDotEnv() {
-	data, err := os.ReadFile(".env")
-	if err != nil {
-		return // 文件不存在，静默跳过
-	}
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		// 跳过空行和注释
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		// 去除可选的 export 前缀
-		line = strings.TrimPrefix(line, "export ")
-		// 按第一个 = 分割
-		idx := strings.Index(line, "=")
-		if idx < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:idx])
-		val := strings.TrimSpace(line[idx+1:])
-		// 去除引号包裹
-		if len(val) >= 2 {
-			if (val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'') {
-				val = val[1 : len(val)-1]
-			}
-		}
-		if key == "" {
-			continue
-		}
-		// 仅在真实环境中尚未设置时注入
-		if _, exists := os.LookupEnv(key); !exists {
-			_ = os.Setenv(key, val)
-		}
-	}
+	_ = godotenv.Load() // 文件不存在时静默跳过
 }
 
 // DefaultPath 是配置文件默认路径，按 OS 区分：
