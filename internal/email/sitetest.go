@@ -30,12 +30,10 @@ func (c *Client) SendSiteTestEmail(ctx context.Context, host string, port int, u
 	return sendSiteTestMail(host, port, user, pass, display, to, "邮件服务测试 - 兽剧聚合平台", html)
 }
 
-// ClearCache 清空邮件配置/站点设置/关于信息的缓存（对齐 email.js clearEmailCache）。
-// 站点内容 PUT /:key 在 key=email 时调用，避免改配置后 5 分钟缓存期内继续用旧配置。
+// ClearCache 清空站点设置/关于信息的缓存（对齐 email.js clearEmailCache）。
 func (c *Client) ClearCache() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.configCache = nil
 	c.settingsCache = nil
 	c.aboutCache = nil
 }

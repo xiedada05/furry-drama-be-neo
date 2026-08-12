@@ -1,17 +1,13 @@
 // Package email 封装 SMTP 邮件发送，对齐 Express utils/email.js。
 //
-// 配置两级：SiteContent key='email' 的 JSON（5 分钟缓存，pass 字段用
-// sha256(JWT_SECRET) 独立解密）→ 回退环境变量 EMAIL_*。
+// 配置来源：ini [email] 段 + 环境变量 EMAIL_*（不再读取 SiteContent email 数据库配置）。
 // 目标邮箱限流：每收件邮箱 1 小时最多 10 封（内存窗口）。
 package email
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -21,13 +17,12 @@ import (
 	"github.com/xiedada05/furry-drama-be-neo/internal/repository"
 )
 
-// Config 是 SMTP 配置（对齐 email.js getEmailConfig 返回的 data）。
+// Config 是 SMTP 配置（来自 ini [email] 段 / 环境变量 EMAIL_*）。
 type Config struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
 	Pass     string `json:"pass"`
-	Enabled  bool   `json:"enabled"`
 	FromName string `json:"fromName"`
 }
 
@@ -57,10 +52,9 @@ type Client struct {
 
 	target *TargetRate
 
-	mu           sync.Mutex
-	configCache  *clientCache
+	mu            sync.Mutex
 	settingsCache *clientCache
-	aboutCache   *clientCache
+	aboutCache    *clientCache
 
 	// sendMail 是 SMTP 发送注入点（测试用）。默认用 go-mail。
 	sendMail func(host string, port int, user, pass, fromName, to, subject, html string) (bool, error)
@@ -80,49 +74,11 @@ func (c *Client) SetSendMail(fn func(host string, port int, user, pass, fromName
 	c.sendMail = fn
 }
 
-// GetConfig 返回当前 SMTP 配置（SiteContent email → env 回退），未配置返回 ok=false。
+// GetConfig 返回当前 SMTP 配置（仅来自 ini/env，不再读取 SiteContent email 数据库配置）。
+// 未配置返回 ok=false。
 func (c *Client) GetConfig(ctx context.Context) (Config, bool) {
-	if cfg, ok := c.getDBCached(ctx); ok {
-		return cfg, true
-	}
 	ec := c.envConfig()
 	return ec, ec.Host != "" && ec.User != "" && ec.Pass != ""
-}
-
-// getDBCached 读 SiteContent email 配置（5 分钟缓存）。
-func (c *Client) getDBCached(ctx context.Context) (Config, bool) {
-	c.mu.Lock()
-	if c.configCache != nil && time.Since(c.configCache.at) < cacheTTL {
-		c.mu.Unlock()
-		if v, ok := c.configCache.value.(Config); ok {
-			return v, ok
-		}
-		return Config{}, false
-	}
-	c.mu.Unlock()
-
-	if c.sc == nil {
-		return Config{}, false
-	}
-	doc, err := c.sc.FindByKey(ctx, "email")
-	if err != nil {
-		return Config{}, false
-	}
-	var data Config
-	if err := json.Unmarshal([]byte(doc.Content), &data); err != nil {
-		return Config{}, false
-	}
-	// pass 独立解密：sha256(JWT_SECRET) 的 AES-256-CBC（对齐 email.js L54-67）。
-	if data.Pass != "" {
-		data.Pass = decryptEmailPass(data.Pass, c.cfg.JWT.Secret)
-	}
-	c.mu.Lock()
-	c.configCache = &clientCache{value: data, at: time.Now()}
-	c.mu.Unlock()
-	if data.Enabled && data.Host != "" && data.User != "" && data.Pass != "" {
-		return data, true
-	}
-	return Config{}, false
 }
 
 // envConfig 从环境配置（config.Email）构造 Config。
@@ -179,21 +135,42 @@ func (c *Client) GetSiteAbout(ctx context.Context) siteAbout {
 }
 
 // Send 发送邮件：目标限流 → SMTP；未配置或失败返回 false（对齐 Express 返回 bool）。
+// 三种失败均记日志，避免静默：限流/未配置记 Warn，SMTP 发送失败记 Error（含 err 与 host:port，不含 pass）。
 func (c *Client) Send(ctx context.Context, to, subject, html string) bool {
 	to = toLowerTrim(to)
 	if !c.target.Allow(to) {
+		slog.Warn("[Email] skip: target rate-limited", "to", to, "subject", subject)
 		return false
 	}
 	cfg, ok := c.GetConfig(ctx)
 	if !ok {
+		slog.Warn("[Email] skip: SMTP not configured", "to", to, "subject", subject)
 		return false
 	}
 	fromName := cfg.FromName
 	if fromName == "" {
 		fromName = firstNonEmpty(c.cfg.Email.FromName, "兽剧聚合平台")
 	}
-	okSend, _ := c.sendMail(cfg.Host, cfg.Port, cfg.User, cfg.Pass, fromName, to, subject, html)
+	okSend, err := c.sendMail(cfg.Host, cfg.Port, cfg.User, cfg.Pass, fromName, to, subject, html)
+	if err != nil {
+		slog.Error("[Email] send failed", "to", to, "subject", subject, "host", cfg.Host, "port", cfg.Port, "err", err)
+	}
 	return okSend
+}
+
+// StartCleanup 启动后台清理：每 interval 清理一次目标限流器的过期记录。
+// 不阻塞；纯内存清理，进程退出时随进程自然终止，无需优雅关停协调。
+func (c *Client) StartCleanup(interval time.Duration) {
+	if interval <= 0 {
+		interval = 10 * time.Minute
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			c.target.Cleanup()
+		}
+	}()
 }
 
 // sendViaGoMail 用 go-mail 发送。
@@ -231,38 +208,6 @@ func sendViaGoMail(host string, port int, user, pass, fromName, to, subject, htm
 	return true, nil
 }
 
-// decryptEmailPass 独立解密 SiteContent email.pass：key = sha256(JWT_SECRET) raw，
-// AES-256-CBC，格式 enc:<iv hex>:<ct hex>（对齐 email.js L54-67，注意与 fieldcrypto
-// 的 ENCRYPTION_KEY 派生不同）。
-func decryptEmailPass(text, jwtSecret string) string {
-	if len(text) < 5 || text[:4] != "enc:" {
-		return text
-	}
-	key := sha256.Sum256([]byte(jwtSecret))
-	parts := splitN(text[4:], ":", 2)
-	if len(parts) != 2 {
-		return text
-	}
-	iv, err1 := hex.DecodeString(parts[0])
-	ct, err2 := hex.DecodeString(parts[1])
-	if err1 != nil || err2 != nil || len(iv) != aes.BlockSize {
-		return text
-	}
-	block, err := aes.NewCipher(key[:])
-	if err != nil {
-		return text
-	}
-	plain := make([]byte, len(ct))
-	cipher.NewCBCDecrypter(block, iv).CryptBlocks(plain, ct)
-	// PKCS7 去填充（对齐 decipher.final 语义）。
-	if len(plain) > 0 {
-		if padLen := int(plain[len(plain)-1]); padLen > 0 && padLen <= aes.BlockSize && padLen <= len(plain) {
-			plain = plain[:len(plain)-padLen]
-		}
-	}
-	return string(plain)
-}
-
 func firstNonEmpty(v, fallback string) string {
 	if v != "" {
 		return v
@@ -280,15 +225,6 @@ func toLowerTrim(s string) string {
 		out = append(out, c)
 	}
 	return string(out)
-}
-
-func splitN(s, sep string, n int) []string {
-	for i := 0; i+n-1 < len(s); i++ {
-		if string(s[i:i+1]) == sep {
-			return []string{s[:i], s[i+1:]}
-		}
-	}
-	return []string{s}
 }
 
 // isLocalhost 判断主机是否为本地（email.js requireTLS 排除）。

@@ -16,24 +16,7 @@ func newTestClient() *Client {
 	return NewClient(cfg, nil)
 }
 
-// TestDecryptEmailPassNodeVector 验证与 Node email.js 的 enc: 解密兼容
-// （key = sha256(JWT_SECRET) raw，AES-256-CBC）。
-func TestDecryptEmailPassNodeVector(t *testing.T) {
-	// 向量由 Node 端同算法（sha256("my-secret") raw）加密 "smtp-pass-123" 得到。
-	got := decryptEmailPass("enc:771bfdbe04721e7096eac88c66d2708d:f0222d06954d973210028c11653165ba", "my-secret")
-	if got != "smtp-pass-123" {
-		t.Fatalf("decrypt mismatch: got %q", got)
-	}
-}
-
-// TestDecryptEmailPassPassthrough 非 enc: 前缀原样返回。
-func TestDecryptEmailPassPassthrough(t *testing.T) {
-	if got := decryptEmailPass("plain-pass", "my-secret"); got != "plain-pass" {
-		t.Fatalf("passthrough mismatch: %q", got)
-	}
-}
-
-// TestSendNotConfigured 未配置 SMTP（env 与 sitecontent 均空）→ Send 返回 false。
+// TestSendNotConfigured 未配置 SMTP → Send 返回 false。
 func TestSendNotConfigured(t *testing.T) {
 	c := newTestClient()
 	c.cfg.Email.Host = ""

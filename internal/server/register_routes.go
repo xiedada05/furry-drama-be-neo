@@ -1,6 +1,8 @@
 package server
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/xiedada05/furry-drama-be-neo/internal/email"
@@ -17,6 +19,7 @@ import (
 // middleware.RateLimit 施加（内部按 path 判断，v1 不触发端点限流）。
 func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts) {
 	mail := email.NewClient(d.Config, d.Repos.SiteContents)
+	mail.StartCleanup(10 * time.Minute)
 	ipr := ipregion.NewClient(nil)
 	svc := service.NewAuthService(d.Config, d.Repos, d.Signer, mail, ipr)
 	amw := middleware.NewAuth(d.Repos, d.Signer)

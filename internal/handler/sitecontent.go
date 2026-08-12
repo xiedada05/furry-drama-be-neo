@@ -2,13 +2,13 @@ package handler
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 
-	"github.com/xiedada05/furry-drama-be-neo/internal/auth"
 	"github.com/xiedada05/furry-drama-be-neo/internal/config"
 	"github.com/xiedada05/furry-drama-be-neo/internal/email"
 	"github.com/xiedada05/furry-drama-be-neo/internal/errors"
@@ -27,7 +27,7 @@ import (
 
 // defaultSiteContentKey 是默认内容的 key 顺序（对齐 DEFAULT_CONTENT 的
 // Object.entries 插入序）。
-var defaultSiteContentKey = []string{"privacy", "terms", "about", "settings", "email"}
+var defaultSiteContentKey = []string{"privacy", "terms", "about", "settings"}
 
 // defaultSiteContent 对齐 siteContent.js DEFAULT_CONTENT（逐字照抄 content JSON）。
 var defaultSiteContent = map[string]struct{ title, content string }{
@@ -47,10 +47,6 @@ var defaultSiteContent = map[string]struct{ title, content string }{
 		"站点设置",
 		`{"siteName":"兽剧聚合平台","navLogo":"","welcomeTitle":"欢迎来到兽剧聚合平台","welcomeSubtitle":"发现和追踪你喜爱的兽剧内容","favicon":"","browserTitle":"兽剧聚合平台","pwaName":"兽剧聚合平台","pwaShortName":"兽剧","pwaDescription":"兽剧内容聚合平台 - 发现和追踪你喜爱的兽剧内容","pwaIcon192":"","pwaIcon512":"","pwaMaskableIcon":"","pwaBackgroundColor":"#0f172a","pwaThemeColor":"#6366f1","backgroundImage":"","backgroundEnabled":false,"backgroundOpacity":30,"backgroundBlur":0}`,
 	},
-	"email": {
-		"邮件服务",
-		`{"host":"","port":"465","user":"","pass":"","fromName":"兽剧聚合平台","enabled":false}`,
-	},
 }
 
 // SiteContents 是 /api/site-content 域 handler 容器。
@@ -62,8 +58,7 @@ type SiteContents struct {
 	Mail   *email.Client
 }
 
-// NewSiteContents 构造站点内容 handler 容器。mail 为邮件客户端（可为 nil，
-// 跳过 test-email 与 PUT email 的缓存清理）。
+// NewSiteContents 构造站点内容 handler 容器。mail 为邮件客户端（可为 nil，跳过 test-email）。
 func NewSiteContents(repos *repository.Repos, cfg *config.Config, amw *middleware.Auth, rl func(ratelimit.Spec) gin.HandlerFunc, mail *email.Client) *SiteContents {
 	return &SiteContents{Repos: repos, Config: cfg, AuthMW: amw, RL: rl, Mail: mail}
 }
@@ -199,7 +194,7 @@ func (h *SiteContents) PWAManifest(c *gin.Context) {
 }
 
 // GetByKey GET /api/site-content/:key（公开，key=email 需 superAdmin）。
-// 不存在且存在默认内容时自动创建；email 键的 pass 字段解密后返回。
+// 不存在且存在默认内容时自动创建；email 键返回 ini/env 的当前配置（pass 脱敏）。
 // @Summary 获取站点内容
 // @Tags 站点内容
 // @Param key path string true "内容键（privacy/terms/about/settings/email）"
@@ -209,6 +204,10 @@ func (h *SiteContents) PWAManifest(c *gin.Context) {
 func (h *SiteContents) GetByKey(c *gin.Context) {
 	key := c.Param("key")
 	ctx := c.Request.Context()
+	if key == "email" {
+		c.JSON(200, h.emailConfigJSON())
+		return
+	}
 	content, err := h.Repos.SiteContents.FindByKey(ctx, key)
 	if repository.IsNotFound(err) {
 		if _, ok := defaultSiteContent[key]; ok {
@@ -225,30 +224,30 @@ func (h *SiteContents) GetByKey(c *gin.Context) {
 		serverError(c)
 		return
 	}
-	if key == "email" && content.Content != "" {
-		var data map[string]any
-		if err := json.Unmarshal([]byte(content.Content), &data); err == nil {
-			if pass, ok := data["pass"].(string); ok && pass != "" {
-				data["pass"] = auth.DecryptField(pass,
-					auth.FieldKey(h.Config.JWT.EncryptionKey, h.Config.JWT.Secret))
-				if b, err := json.Marshal(data); err == nil {
-					content = &model.SiteContent{
-						ID:        content.ID,
-						Key:       content.Key,
-						Title:     content.Title,
-						Content:   string(b),
-						UpdatedAt: content.UpdatedAt,
-						VersionKey: content.VersionKey,
-					}
-				}
-			}
-		}
-	}
 	c.JSON(200, siteContentJSON(content))
 }
 
+// emailConfigJSON 返回当前邮件服务配置（来自 ini/env，pass 脱敏，仅供查询）。
+func (h *SiteContents) emailConfigJSON() gin.H {
+	e := h.Config.Email
+	enabled := e.Host != "" && e.User != "" && e.Pass != ""
+	content, _ := json.Marshal(map[string]any{
+		"host":     e.Host,
+		"port":     strconv.Itoa(e.Port),
+		"user":     e.User,
+		"pass":     "", // 脱敏：真实密码仅存于服务器配置，不回传
+		"fromName": e.FromName,
+		"enabled":  enabled,
+	})
+	return gin.H{
+		"key":     "email",
+		"title":   "邮件服务",
+		"content": string(content),
+	}
+}
+
 // UpdateByKey PUT /api/site-content/:key（superAdminProtect）。
-// 更新标题/内容；email 键的 pass 字段加密存储，并清空邮件配置缓存。
+// 更新标题/内容；email 键已禁用（配置走环境变量/配置文件，仅可 GET 查询）。
 // @Summary 更新站点内容
 // @Tags 站点内容
 // @Security bearerAuth
@@ -259,24 +258,16 @@ func (h *SiteContents) GetByKey(c *gin.Context) {
 // @Router /site-content/{key} [put]
 func (h *SiteContents) UpdateByKey(c *gin.Context) {
 	key := c.Param("key")
+	if key == "email" {
+		c.JSON(400, gin.H{"message": "邮件服务配置已改为通过环境变量或配置文件设置，请勿在此修改"})
+		return
+	}
 	var body map[string]any
 	if err := c.ShouldBindJSON(&body); err != nil {
 		body = map[string]any{}
 	}
 	contentVal, hasContent := body["content"]
 	processed := asString(contentVal)
-	if key == "email" && contentVal != nil {
-		var data map[string]any
-		if err := json.Unmarshal([]byte(asString(contentVal)), &data); err == nil {
-			if pass, ok := data["pass"].(string); ok && pass != "" {
-				data["pass"] = auth.EncryptField(pass,
-					auth.FieldKey(h.Config.JWT.EncryptionKey, h.Config.JWT.Secret))
-				if b, err := json.Marshal(data); err == nil {
-					processed = string(b)
-				}
-			}
-		}
-	}
 	update := bson.M{"updatedAt": time.Now().UTC().Truncate(time.Millisecond)}
 	if titleVal, ok := body["title"]; ok {
 		update["title"] = asString(titleVal)
@@ -288,9 +279,6 @@ func (h *SiteContents) UpdateByKey(c *gin.Context) {
 	if err != nil {
 		serverError(c)
 		return
-	}
-	if key == "email" && h.Mail != nil {
-		h.Mail.ClearCache()
 	}
 	c.JSON(200, siteContentJSON(updated))
 }
@@ -366,6 +354,7 @@ func (h *SiteContents) TestEmail(c *gin.Context) {
 		return
 	}
 	if err := h.Mail.SendSiteTestEmail(c.Request.Context(), host, port, user, pass, fromName, to); err != nil {
+		slog.Error("[Email] test-email send failed", "host", host, "port", port, "to", to, "err", err)
 		c.JSON(400, gin.H{"message": "邮件发送失败，请检查邮件服务配置"})
 		return
 	}
