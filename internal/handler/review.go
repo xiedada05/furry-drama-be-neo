@@ -684,6 +684,7 @@ func (h *Review) reviewEpisodeJSON(e *model.Episode, refs map[string]repository.
 		"allowedEditors":       reviewRefsJSON(e.AllowedEditors, refs, opt.populateAllowedEditors, opt.allowedEditorsEmail),
 		"customAuthors":        reviewRefsJSON(e.CustomAuthors, refs, opt.populateCustomAuthors, opt.customAuthorsEmail),
 		"qqGroupLink":          e.QQGroupLink,
+		"qqGroupNumber":        e.QQGroupNumber,
 		"reviewStatus":         e.ReviewStatus,
 		"reviewNote":           e.ReviewNote,
 		"pendingChanges":       e.PendingChanges,
@@ -823,6 +824,9 @@ func applyPendingChanges(e *model.Episode, pc primitive.M) {
 	}
 	if v, ok := pc["qqGroupLink"]; ok {
 		e.QQGroupLink = bsonString(v)
+	}
+	if v, ok := pc["qqGroupNumber"]; ok {
+		e.QQGroupNumber = bsonString(v)
 	}
 }
 

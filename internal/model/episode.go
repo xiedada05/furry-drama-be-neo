@@ -33,6 +33,7 @@ type Episode struct {
 	AllowedEditors       []primitive.ObjectID `bson:"allowedEditors" json:"allowedEditors"`
 	CustomAuthors        []primitive.ObjectID `bson:"customAuthors" json:"customAuthors"`
 	QQGroupLink          string               `bson:"qqGroupLink" json:"qqGroupLink"`
+	QQGroupNumber        string               `bson:"qqGroupNumber" json:"qqGroupNumber"`
 	ReviewStatus         string               `bson:"reviewStatus" json:"reviewStatus"`
 	ReviewNote           string               `bson:"reviewNote" json:"reviewNote"`
 	PendingChanges       primitive.M          `bson:"pendingChanges" json:"pendingChanges"`
@@ -68,6 +69,7 @@ func (e *Episode) ToVersionData() primitive.M {
 		"updateDay":            e.UpdateDay,
 		"hideCreator":          e.HideCreator,
 		"qqGroupLink":          e.QQGroupLink,
+		"qqGroupNumber":        e.QQGroupNumber,
 		"reviewStatus":         e.ReviewStatus,
 		"reviewNote":           e.ReviewNote,
 		"hasPendingChanges":    e.HasPendingChanges,

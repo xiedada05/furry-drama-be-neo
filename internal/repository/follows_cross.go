@@ -42,6 +42,7 @@ type FollowsEpisodeDoc struct {
 	AllowedEditors       []primitive.ObjectID `bson:"allowedEditors" json:"allowedEditors"`
 	CustomAuthors        []primitive.ObjectID `bson:"customAuthors" json:"customAuthors"`
 	QQGroupLink          string               `bson:"qqGroupLink" json:"qqGroupLink"`
+	QQGroupNumber        string               `bson:"qqGroupNumber" json:"qqGroupNumber"`
 	ReviewStatus         string               `bson:"reviewStatus" json:"reviewStatus"`
 	ReviewNote           string               `bson:"reviewNote" json:"reviewNote"`
 	PendingChanges       primitive.M          `bson:"pendingChanges" json:"pendingChanges"`

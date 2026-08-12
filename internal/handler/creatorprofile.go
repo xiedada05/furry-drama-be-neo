@@ -312,6 +312,7 @@ func episodeDocJSON(e *model.Episode) gin.H {
 		"allowedEditors":       refsJSON(e.AllowedEditors, nil),
 		"customAuthors":        refsJSON(e.CustomAuthors, nil),
 		"qqGroupLink":          e.QQGroupLink,
+		"qqGroupNumber":        e.QQGroupNumber,
 		"reviewStatus":         e.ReviewStatus,
 		"reviewNote":           e.ReviewNote,
 		"pendingChanges":       e.PendingChanges,

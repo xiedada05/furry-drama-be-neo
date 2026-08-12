@@ -50,7 +50,7 @@ var versionDiffFieldOrder = []string{
 	"_id", "title", "titleEn", "titleJa", "description", "descriptionEn", "descriptionJa",
 	"coverImage", "totalEpisodes", "currentEpisodes", "status", "category", "tags",
 	"platformLinks", "views", "averageRating", "ratingCount", "updateDay", "premiereDate",
-	"createdBy", "hideCreator", "allowedEditors", "customAuthors", "qqGroupLink",
+	"createdBy", "hideCreator", "allowedEditors", "customAuthors", "qqGroupLink", "qqGroupNumber",
 	"reviewStatus", "reviewNote", "pendingChanges", "hasPendingChanges", "pendingChangeSummary",
 	"reviewedBy", "reviewedAt", "createdAt", "updatedAt", "__v",
 }
@@ -482,6 +482,7 @@ func versionsEpisodeJSON(e *model.Episode) gin.H {
 		"allowedEditors":       refsJSON(e.AllowedEditors, nil),
 		"customAuthors":        refsJSON(e.CustomAuthors, nil),
 		"qqGroupLink":          e.QQGroupLink,
+		"qqGroupNumber":        e.QQGroupNumber,
 		"reviewStatus":         e.ReviewStatus,
 		"reviewNote":           e.ReviewNote,
 		"pendingChanges":       e.PendingChanges,

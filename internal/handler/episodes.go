@@ -926,6 +926,7 @@ func (h *Episodes) Create(c *gin.Context) {
 		HideCreator:     truthy(body["hideCreator"]),
 		CustomAuthors:   toObjectIDs(body["customAuthors"]),
 		QQGroupLink:     orDefaultString(body["qqGroupLink"], ""),
+		QQGroupNumber:   orDefaultString(body["qqGroupNumber"], ""),
 		ReviewStatus:    reviewStatus,
 	}
 	if err := h.Repos.Episodes.Create(c.Request.Context(), e); err != nil {
@@ -1151,7 +1152,7 @@ func (h *Episodes) Update(c *gin.Context) {
 	allowedFields := []string{"title", "titleEn", "titleJa", "description", "descriptionEn",
 		"descriptionJa", "coverImage", "totalEpisodes", "currentEpisodes", "status",
 		"category", "tags", "updateDay", "premiereDate", "platformLinks", "hideCreator",
-		"customAuthors", "qqGroupLink"}
+		"customAuthors", "qqGroupLink", "qqGroupNumber"}
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	// 创作者编辑已审核（approved）剧集：修改暂存到 pendingChanges，原内容继续公开展示。
@@ -1569,6 +1570,7 @@ func (h *Episodes) episodeJSON(e *model.Episode, users map[string]repository.Epi
 		"allowedEditors":       refsJSON(e.AllowedEditors, users),
 		"customAuthors":        refsJSON(e.CustomAuthors, users),
 		"qqGroupLink":          e.QQGroupLink,
+		"qqGroupNumber":        e.QQGroupNumber,
 		"reviewStatus":         e.ReviewStatus,
 		"reviewNote":           e.ReviewNote,
 		"pendingChanges":       e.PendingChanges,
@@ -1957,7 +1959,7 @@ func toDateOrDefaultNow(v any) *time.Time {
 func typedFieldValue(field string, v any) any {
 	switch field {
 	case "title", "titleEn", "titleJa", "description", "descriptionEn", "descriptionJa",
-		"coverImage", "updateDay", "qqGroupLink":
+		"coverImage", "updateDay", "qqGroupLink", "qqGroupNumber":
 		return asString(v)
 	case "status":
 		return asString(v)
