@@ -1,4 +1,5 @@
 bin/
 dev.ini
 .env
+deploy/backend.production.ini
 uploads/
