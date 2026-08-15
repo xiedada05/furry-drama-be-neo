@@ -16,5 +16,8 @@ import (
 //
 // 注意：必须尽早注册（包裹 ResponseWriter），否则先前写入的头/体无法被压缩。
 func Gzip() gin.HandlerFunc {
-	return gzip.Gzip(gzip.DefaultCompression)
+	// 排除已压缩的图片扩展名：默认已含 .png/.gif/.jpeg/.jpg，补 .webp（上传白名单含 webp，
+	// 其本身已压缩，再 gzip 徒增 CPU 且体积不减）。WithExcludedExtensions 会覆盖默认，故需列全。
+	return gzip.Gzip(gzip.DefaultCompression,
+		gzip.WithExcludedExtensions([]string{".png", ".gif", ".jpeg", ".jpg", ".webp"}))
 }

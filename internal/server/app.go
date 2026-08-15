@@ -16,6 +16,8 @@
 package server
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -30,6 +32,7 @@ import (
 	"github.com/xiedada05/furry-drama-be-neo/internal/middleware"
 	"github.com/xiedada05/furry-drama-be-neo/internal/ratelimit"
 	"github.com/xiedada05/furry-drama-be-neo/internal/repository"
+	"github.com/xiedada05/furry-drama-be-neo/internal/upload"
 )
 
 // Deps 是装配 Gin 引擎所需的全部依赖。
@@ -87,7 +90,20 @@ func NewApp(d Deps) *gin.Engine {
 	// ---- 双版本业务路由挂载（M2 填充；挂 api 组下以继承 globalLimiter）----
 	RegisterRoutes(d, api, opts)
 
-	// TODO(M1): /uploads 静态服务（7d 缓存 + noindex/nosniff/inline）
+	// ---- /uploads 静态服务（图片，公开可读）----
+	// 不挂 /api 组：避免吃 globalLimiter（300/min）；apitracker 只统计 /api/、CSRF 对 GET
+	// 放行，故静态图请求不受限流/统计/CSRF 影响。文件名 "<prefix>-<16字节hex><ext>" 内容
+	// 不可变 → 长缓存 + immutable（换图=换文件名=新 URL，天然失效）。noindex + inline +
+	// nosniff（nosniff 由全局 securityheaders 提供）对齐 Express 的 express.static 行为。
+	uploadsGroup := r.Group("/uploads")
+	uploadsGroup.Use(func(c *gin.Context) {
+		c.Header("Cache-Control", "public, max-age=604800, immutable")
+		c.Header("X-Robots-Tag", "noindex")
+		c.Header("Content-Disposition", "inline")
+		c.Next()
+	})
+	uploadsGroup.StaticFS("/", http.Dir(upload.Dir))
+
 	// TODO(M4): swagger（仅非生产）/api/docs
 
 	// ---- 全局错误处理（最后注册）----

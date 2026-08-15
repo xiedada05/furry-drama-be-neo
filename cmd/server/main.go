@@ -36,6 +36,7 @@ import (
 	"github.com/xiedada05/furry-drama-be-neo/internal/config"
 	"github.com/xiedada05/furry-drama-be-neo/internal/repository"
 	"github.com/xiedada05/furry-drama-be-neo/internal/server"
+	"github.com/xiedada05/furry-drama-be-neo/internal/upload"
 )
 
 func main() {
@@ -62,6 +63,7 @@ func main() {
 
 	repos := repository.NewRepos(db, cfg.Security.LoginMaxAttempts, cfg.Security.LoginLockMinutes)
 	signer := auth.NewSigner(cfg.JWT.Secret)
+	upload.SetDir(cfg.Server.UploadsDir) // 上传落盘目录（SaveImage 与 /uploads 静态服务共用）
 	app := server.NewApp(server.Deps{Config: cfg, DB: db, Repos: repos, Signer: signer})
 
 	ln, err := netListen(cfg.Server.Listen)

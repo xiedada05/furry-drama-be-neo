@@ -187,11 +187,16 @@ func randHex(n int) string {
 
 // RemoveFile 删除 uploads 目录下的文件（path 为相对文件名，不含 /uploads/ 前缀）。
 // 文件不存在返回 nil（对齐 Express 删除旧文件忽略错误）。
+//
+// 防御性校验：只接受 Dir 直属的单层文件名（SaveImage 生成 "<prefix>-<hex>.<ext>"，
+// 永不包含分隔符或 ".."）。空串/"."/".." 或含路径分隔符/ ".." 的路径一律拒绝，
+// 防止 DB/URL 被污染时越权删除（含误删 Dir 本身或其父目录）。
 func RemoveFile(path string) error {
-	full := path
-	if Dir != "" {
-		full = filepath.Join(Dir, path)
+	if path == "" || path == "." || path == ".." ||
+		filepath.Base(path) != path || strings.Contains(path, "..") {
+		return errors.New("非法的上传文件路径")
 	}
+	full := filepath.Join(Dir, path)
 	if _, err := os.Stat(full); os.IsNotExist(err) {
 		return nil
 	}
