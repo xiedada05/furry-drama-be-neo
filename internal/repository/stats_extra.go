@@ -436,6 +436,8 @@ func (r *SingleEpisodeRepo) StatsCalendarUpcoming(ctx context.Context, start, en
 }
 
 // StatsCalendarEpisodeDocs 批量取日历 populate 的剧集视图，返回 id→视图。
+// 仅返回已过审剧集（reviewStatus:'approved'）：未过审剧集无视图 → 关联单集被跳过，
+// 日历不展示待审核/未通过内容。
 func (r *EpisodeRepo) StatsCalendarEpisodeDocs(ctx context.Context, ids []primitive.ObjectID) (map[primitive.ObjectID]StatsCalendarEpisode, error) {
 	out := map[primitive.ObjectID]StatsCalendarEpisode{}
 	if len(ids) == 0 {
@@ -443,7 +445,7 @@ func (r *EpisodeRepo) StatsCalendarEpisodeDocs(ctx context.Context, ids []primit
 	}
 	var rows []StatsCalendarEpisode
 	err := statsFind(ctx, r.coll,
-		bson.M{"_id": bson.M{"$in": ids}},
+		bson.M{"_id": bson.M{"$in": ids}, "reviewStatus": "approved"},
 		bson.M{"title": 1, "titleEn": 1, "coverImage": 1, "currentEpisodes": 1, "totalEpisodes": 1, "status": 1},
 		nil, 0, 0, &rows)
 	if err != nil {
@@ -457,10 +459,11 @@ func (r *EpisodeRepo) StatsCalendarEpisodeDocs(ctx context.Context, ids []primit
 }
 
 // StatsFindPremieres 已排期首播剧集（对齐 Episode.find({status:'upcoming', premiereDate:{$gte,$lt}}).sort({premiereDate:1})）。
+// 仅已过审剧集：首播排期对公众可见，待审核/未通过不上日历。
 func (r *EpisodeRepo) StatsFindPremieres(ctx context.Context, start, end time.Time) ([]StatsCalendarEpisode, error) {
 	var out []StatsCalendarEpisode
 	err := statsFind(ctx, r.coll,
-		bson.M{"status": "upcoming", "premiereDate": bson.M{"$gte": start, "$lt": end}},
+		bson.M{"status": "upcoming", "premiereDate": bson.M{"$gte": start, "$lt": end}, "reviewStatus": "approved"},
 		bson.M{"title": 1, "titleEn": 1, "coverImage": 1, "totalEpisodes": 1, "status": 1, "premiereDate": 1},
 		bson.D{{Key: "premiereDate", Value: 1}}, 0, 0, &out)
 	for i := range out {
