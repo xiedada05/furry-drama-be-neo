@@ -17,6 +17,10 @@ package server
 
 import (
 	"net/http"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
@@ -90,19 +94,13 @@ func NewApp(d Deps) *gin.Engine {
 	// ---- 双版本业务路由挂载（M2 填充；挂 api 组下以继承 globalLimiter）----
 	RegisterRoutes(d, api, opts)
 
-	// ---- /uploads 静态服务（图片，公开可读）----
+	// ---- /uploads 静态服务（图片/SVG 图标，公开可读）----
 	// 不挂 /api 组：避免吃 globalLimiter（300/min）；apitracker 只统计 /api/、CSRF 对 GET
-	// 放行，故静态图请求不受限流/统计/CSRF 影响。文件名 "<prefix>-<16字节hex><ext>" 内容
+	// 放行，故静态请求不受限流/统计/CSRF 影响。文件名 "<prefix>-<16字节hex><ext>" 内容
 	// 不可变 → 长缓存 + immutable（换图=换文件名=新 URL，天然失效）。noindex + inline +
-	// nosniff（nosniff 由全局 securityheaders 提供）对齐 Express 的 express.static 行为。
-	uploadsGroup := r.Group("/uploads")
-	uploadsGroup.Use(func(c *gin.Context) {
-		c.Header("Cache-Control", "public, max-age=604800, immutable")
-		c.Header("X-Robots-Tag", "noindex")
-		c.Header("Content-Disposition", "inline")
-		c.Next()
-	})
-	uploadsGroup.StaticFS("/", http.Dir(upload.Dir))
+	// nosniff（nosniff 由全局 securityheaders 提供）；禁止目录列举与路径穿越。
+	r.GET("/uploads/*filepath", serveUploads)
+	r.HEAD("/uploads/*filepath", serveUploads)
 
 	// TODO(M4): swagger（仅非生产）/api/docs
 
@@ -110,4 +108,28 @@ func NewApp(d Deps) *gin.Engine {
 	r.Use(errors.Handler(func() bool { return d.Config.IsDev }))
 
 	return r
+}
+
+// serveUploads 提供 /uploads 静态文件服务（对齐 Express express.static 行为）：
+//   - 7 天缓存（Cache-Control: public, max-age=604800, immutable）；
+//   - X-Content-Type-Options: nosniff、X-Robots-Tag: noindex、Content-Disposition: inline；
+//   - 目录与不存在文件返回 404，禁止目录列举；
+//   - 路径穿越（..）直接拒绝。
+func serveUploads(c *gin.Context) {
+	name := strings.TrimPrefix(path.Clean("/"+c.Param("filepath")), "/")
+	if name == "" || strings.Contains(name, "..") {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	full := filepath.Join(upload.Dir, filepath.FromSlash(name))
+	info, err := os.Stat(full)
+	if err != nil || info.IsDir() {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "public, max-age=604800, immutable")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("X-Robots-Tag", "noindex")
+	c.Header("Content-Disposition", "inline")
+	c.File(full)
 }

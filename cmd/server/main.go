@@ -63,7 +63,12 @@ func main() {
 
 	repos := repository.NewRepos(db, cfg.Security.LoginMaxAttempts, cfg.Security.LoginLockMinutes)
 	signer := auth.NewSigner(cfg.JWT.Secret)
+	// 上传目录与 SVG 图标目录（按配置注入；缺省 ./uploads 与 ./uploads/icons）。
 	upload.SetDir(cfg.Server.UploadsDir) // 上传落盘目录（SaveImage 与 /uploads 静态服务共用）
+	upload.SetIconsDir(cfg.Server.IconsDir)
+	if err := os.MkdirAll(upload.IconsDir, 0o755); err != nil {
+		log.Printf("[WARN] 创建图标目录失败: %v", err)
+	}
 	app := server.NewApp(server.Deps{Config: cfg, DB: db, Repos: repos, Signer: signer})
 
 	ln, err := netListen(cfg.Server.Listen)

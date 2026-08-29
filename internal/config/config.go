@@ -32,6 +32,7 @@ const (
 
 	defaultFrontendURL = "http://localhost:3000"
 	defaultUploadsDir  = "./uploads"
+	defaultIconsDir    = "./uploads/icons"
 	// 默认 CORS 白名单（对齐 src/index.js:198-209 硬编码的 localhost 端口）。
 	defaultOrigins = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:5000"
 )
@@ -58,6 +59,8 @@ type ServerConfig struct {
 	FrontendURL  string
 	SiteURL      string
 	UploadsDir   string
+	// IconsDir 是 SVG 图标文件的存储目录（可配置；默认 ./uploads/icons）。
+	IconsDir     string
 	AllowOrigins []string
 }
 
@@ -177,6 +180,7 @@ func defaults() *Config {
 			FrontendURL:  defaultFrontendURL,
 			SiteURL:      defaultFrontendURL,
 			UploadsDir:   defaultUploadsDir,
+			IconsDir:     defaultIconsDir,
 			AllowOrigins: splitTrim(defaultOrigins),
 		},
 		Database: DatabaseConfig{
@@ -207,6 +211,7 @@ func applyINI(cfg *Config, data []byte) error {
 	cfg.Server.FrontendURL = firstNonEmpty(server.Key("frontend_url").String(), cfg.Server.FrontendURL)
 	cfg.Server.SiteURL = firstNonEmpty(server.Key("site_url").String(), cfg.Server.SiteURL)
 	cfg.Server.UploadsDir = firstNonEmpty(server.Key("uploads_dir").String(), cfg.Server.UploadsDir)
+	cfg.Server.IconsDir = firstNonEmpty(server.Key("icons_dir").String(), cfg.Server.IconsDir)
 	if v := server.Key("allow_origins").String(); v != "" {
 		cfg.Server.AllowOrigins = splitTrim(v)
 	}
@@ -270,6 +275,7 @@ func applyEnv(cfg *Config) {
 	setStr(&cfg.JWT.AltchaHMACKey, os.Getenv("ALTCHA_HMAC_KEY"))
 	setStr(&cfg.Server.FrontendURL, os.Getenv("FRONTEND_URL"))
 	setStr(&cfg.Server.SiteURL, os.Getenv("SITE_URL"))
+	setStr(&cfg.Server.IconsDir, os.Getenv("ICONS_DIR"))
 	if v := os.Getenv("ALLOWED_ORIGINS"); v != "" {
 		cfg.Server.AllowOrigins = splitTrim(v)
 	}

@@ -282,6 +282,26 @@ func (r *UserRepo) UpdateBackgroundPrefs(ctx context.Context, id any, p Backgrou
 	return err
 }
 
+// UpdateThemeID 更新用户当前选择的主题（themeID 为零值时 $unset，回退默认主题）。
+func (r *UserRepo) UpdateThemeID(ctx context.Context, id any, themeID primitive.ObjectID) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	if themeID.IsZero() {
+		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{"themeId": ""}})
+		return err
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"themeId": themeID}})
+	return err
+}
+
+// ClearThemeReferences 把所有选择了 themeID 的用户重置为未选择（主题删除后回收）。
+func (r *UserRepo) ClearThemeReferences(ctx context.Context, themeID primitive.ObjectID) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	_, err := r.coll.UpdateMany(ctx, bson.M{"themeId": themeID}, bson.M{"$unset": bson.M{"themeId": ""}})
+	return err
+}
+
 // UpdateEmailNotificationPrefs 更新邮件通知偏好（prefs 为「键→布尔」局部映射，键名对齐 7 个偏好键）。
 // 对齐 routes/auth/email.js PUT /email-notification-prefs 的 $set emailNotificationPrefs.<key>。
 func (r *UserRepo) UpdateEmailNotificationPrefs(ctx context.Context, id any, prefs map[string]bool) error {

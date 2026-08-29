@@ -39,6 +39,9 @@ type User struct {
 	EmailNotificationPrefs EmailNotificationPrefs `bson:"emailNotificationPrefs" json:"emailNotificationPrefs"`
 	BackgroundPrefs        BackgroundPrefs        `bson:"backgroundPrefs" json:"backgroundPrefs"`
 	PersonalWallpapers     []Wallpaper            `bson:"personalWallpapers" json:"personalWallpapers"`
+	// ThemeID 是用户当前选择的主题（个人/系统主题均可；多端同步）。
+	// 为零值表示未选择（回退站点默认主题）。
+	ThemeID                primitive.ObjectID     `bson:"themeId,omitempty" json:"themeId"`
 	LoginAttempts          int                    `bson:"loginAttempts" json:"-"`
 	LockUntil              int64                  `bson:"lockUntil" json:"-"`
 	CreatedAt              time.Time              `bson:"createdAt" json:"createdAt"`
