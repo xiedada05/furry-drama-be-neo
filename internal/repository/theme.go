@@ -108,8 +108,8 @@ func (r *ThemeRepo) Create(ctx context.Context, t *model.Theme) error {
 	if t.UpdatedAt.IsZero() {
 		t.UpdatedAt = now
 	}
-	if t.Variables == nil {
-		t.Variables = map[string]string{}
+	if t.Icons == nil {
+		t.Icons = map[string]string{}
 	}
 	_, err := r.coll.InsertOne(ctx, t)
 	return err

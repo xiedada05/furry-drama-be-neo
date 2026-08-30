@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"regexp"
 	"strings"
 	"time"
 
@@ -14,13 +13,17 @@ import (
 	"github.com/xiedada05/furry-drama-be-neo/internal/model"
 	"github.com/xiedada05/furry-drama-be-neo/internal/ratelimit"
 	"github.com/xiedada05/furry-drama-be-neo/internal/repository"
+	"github.com/xiedada05/furry-drama-be-neo/internal/upload"
 )
 
 // 本文件实现 /api/themes 主题管理子域。
 //
+// 主题是「壁纸 + 图标」的组合外观包（仅壁纸 / 仅图标 / 全套），不含按钮调色。
+//
 // 公开：GET /active（站点默认主题）、GET /list（可选系统主题）；
 // 登录用户：GET /my、GET /my/selection、PUT /selection、POST /、
-// PUT/DELETE /:id、POST /:id/submit（提交审核）；
+// PUT/DELETE /:id、POST /:id/submit（提交审核）、
+// POST /upload-wallpaper、POST /upload-icon（主题资源上传）；
 // 超管：GET /all、POST /:id/review（审核）、POST /:id/default（设默认）、
 // PUT /:id/admin（系统/个人切换、启用状态）。
 
@@ -47,6 +50,8 @@ func (h *Themes) Register(g *gin.RouterGroup) {
 	g.GET("/my/selection", h.AuthMW.Protect(), h.MySelection)
 	g.PUT("/selection", h.AuthMW.Protect(), h.SetSelection)
 	g.POST("/", h.AuthMW.Protect(), h.Create)
+	g.POST("/upload-wallpaper", h.AuthMW.Protect(), h.UploadWallpaper)
+	g.POST("/upload-icon", h.AuthMW.Protect(), h.UploadIcon)
 	g.PUT("/:id", h.AuthMW.Protect(), h.Update)
 	g.DELETE("/:id", h.AuthMW.Protect(), h.Delete)
 	g.POST("/:id/submit", h.AuthMW.Protect(), h.Submit)
@@ -56,98 +61,107 @@ func (h *Themes) Register(g *gin.RouterGroup) {
 	g.PUT("/:id/admin", super, h.AdminUpdate)
 }
 
+// themeIconsOr 规范化 icons 为非 nil map。
+func themeIconsOr(m map[string]string) map[string]string {
+	if m == nil {
+		return map[string]string{}
+	}
+	return m
+}
+
 // themeJSON 组装主题响应对象（对齐项目 DTO 组装风格）。
 func themeJSON(t *model.Theme) gin.H {
 	ownerID := ""
 	if t.OwnerID != nil {
 		ownerID = t.OwnerID.Hex()
 	}
-	vars := t.Variables
-	if vars == nil {
-		vars = map[string]string{}
-	}
 	return gin.H{
-		"_id":         t.ID.Hex(),
-		"name":        t.Name,
-		"description": t.Description,
-		"mode":        t.Mode,
-		"variables":   vars,
-		"isSystem":    t.IsSystem,
-		"ownerId":     ownerID,
-		"status":      t.Status,
-		"reviewNote":  t.ReviewNote,
-		"isDefault":   t.IsDefault,
-		"enabled":     t.Enabled,
-		"createdAt":   t.CreatedAt,
-		"updatedAt":   t.UpdatedAt,
-		"__v":         t.VersionKey,
+		"_id":            t.ID.Hex(),
+		"name":           t.Name,
+		"description":    t.Description,
+		"wallpaperUrl":   t.WallpaperURL,
+		"wallpaperThumb": t.WallpaperThumb,
+		"icons":          themeIconsOr(t.Icons),
+		"themeType":      t.ThemeType(),
+		"isSystem":       t.IsSystem,
+		"ownerId":        ownerID,
+		"status":         t.Status,
+		"reviewNote":     t.ReviewNote,
+		"isDefault":      t.IsDefault,
+		"enabled":        t.Enabled,
+		"createdAt":      t.CreatedAt,
+		"updatedAt":      t.UpdatedAt,
+		"__v":            t.VersionKey,
 	}
 }
 
 // themePublicJSON 组装主题公开视图（GET /list / /active，隐藏审核备注与作者）。
 func themePublicJSON(t *model.Theme) gin.H {
-	vars := t.Variables
-	if vars == nil {
-		vars = map[string]string{}
-	}
 	return gin.H{
-		"_id":         t.ID.Hex(),
-		"name":        t.Name,
-		"description": t.Description,
-		"mode":        t.Mode,
-		"variables":   vars,
-		"isSystem":    t.IsSystem,
-		"isDefault":   t.IsDefault,
+		"_id":            t.ID.Hex(),
+		"name":           t.Name,
+		"description":    t.Description,
+		"wallpaperUrl":   t.WallpaperURL,
+		"wallpaperThumb": t.WallpaperThumb,
+		"icons":          themeIconsOr(t.Icons),
+		"themeType":      t.ThemeType(),
+		"isSystem":       t.IsSystem,
+		"isDefault":      t.IsDefault,
 	}
 }
 
-// cssVarKeyRe 合法 CSS 变量名（--primary / --primary-bg 等）。
-var cssVarKeyRe = regexp.MustCompile(`^--[a-zA-Z][a-zA-Z0-9-]*$`)
+// themeAssetURLAllowed 判断是否为合法主题资源地址：站内 /uploads/ 或 http(s) 外链。
+func themeAssetURLAllowed(s string) bool {
+	return strings.HasPrefix(s, "/uploads/") ||
+		strings.HasPrefix(s, "https://") || strings.HasPrefix(s, "http://")
+}
 
-// sanitizeThemeVariables 校验并规范化主题变量表：
-//   - key 必须形如 --xxx（防注入任意属性）；
-//   - value 去首尾空白、限长 500；
-//   - 最多 300 个键值对。
-func sanitizeThemeVariables(input map[string]any) (map[string]string, string) {
+// sanitizeThemeAssetURL 校验壁纸地址（允许空串 = 清除壁纸）。
+func sanitizeThemeAssetURL(v any) (string, string) {
+	s, ok := v.(string)
+	if !ok {
+		return "", "壁纸地址必须为字符串"
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > 500 {
+		return "", "壁纸地址过长"
+	}
+	if s != "" && !themeAssetURLAllowed(s) {
+		return "", "壁纸地址不合法"
+	}
+	return s, ""
+}
+
+// sanitizeThemeIcons 校验并规范化主题图标映射：
+//   - key 必须是合法组件标识（复用图标映射正则，如 nav.home）；
+//   - value 必须是 /uploads/ 或 http(s) 资源地址；
+//   - 最多 64 个映射。
+func sanitizeThemeIcons(input map[string]any) (map[string]string, string) {
 	if input == nil {
 		return map[string]string{}, ""
 	}
-	if len(input) > 300 {
-		return nil, "主题变量数量不能超过 300 个"
+	if len(input) > 64 {
+		return nil, "主题图标数量不能超过 64 个"
 	}
 	out := make(map[string]string, len(input))
 	for k, v := range input {
-		if !cssVarKeyRe.MatchString(k) {
-			return nil, "主题变量名不合法: " + k
+		if !iconMappingKeyRe.MatchString(k) {
+			return nil, "图标映射标识不合法: " + k
 		}
 		s, ok := v.(string)
 		if !ok {
-			return nil, "主题变量值必须为字符串: " + k
+			return nil, "图标地址必须为字符串: " + k
 		}
 		s = strings.TrimSpace(s)
-		if len(s) > 500 {
-			return nil, "主题变量值过长: " + k
+		if s == "" || len(s) > 500 {
+			return nil, "图标地址不合法: " + k
+		}
+		if !themeAssetURLAllowed(s) {
+			return nil, "图标地址不合法: " + k
 		}
 		out[k] = s
 	}
 	return out, ""
-}
-
-// asStringMap 提取 map[string]any（非对象返回 nil）。
-func asStringMap(v any) map[string]any {
-	if m, ok := v.(map[string]any); ok {
-		return m
-	}
-	return nil
-}
-
-// themeModeOr 归一化基础模式（默认 dark）。
-func themeModeOr(v any) string {
-	s, _ := v.(string)
-	if s == model.ThemeModeLight {
-		return model.ThemeModeLight
-	}
-	return model.ThemeModeDark
 }
 
 // isSuperUser 判断当前登录用户是否超管。
@@ -217,27 +231,46 @@ func (h *Themes) accessibleTheme(c *gin.Context, t *model.Theme) bool {
 }
 
 // MySelection GET /api/themes/my/selection：获取当前用户生效主题（用户选择 > 默认）。
+// 响应含 applyIcons / applyWallpaper（用户勾选的应用组合，用于前端图标引擎）。
 func (h *Themes) MySelection(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	if !user.ThemeID.IsZero() {
 		t, err := h.Repos.Themes.FindByID(c.Request.Context(), user.ThemeID)
 		if err == nil && h.accessibleTheme(c, t) {
-			c.JSON(200, gin.H{"theme": themePublicJSON(t)})
+			applyIcons := user.ThemeApplyIcons == nil || *user.ThemeApplyIcons
+			applyWallpaper := user.ThemeApplyWallpaper == nil || *user.ThemeApplyWallpaper
+			c.JSON(200, gin.H{
+				"theme":          themePublicJSON(t),
+				"applyIcons":     applyIcons,
+				"applyWallpaper": applyWallpaper,
+			})
 			return
 		}
 		// 引用失效（主题被删/禁用）：静默回收引用。
 		_ = h.Repos.Users.UpdateThemeID(c.Request.Context(), user.ID, primitive.NilObjectID)
 	}
-	c.JSON(200, gin.H{"theme": nil})
+	c.JSON(200, gin.H{"theme": nil, "applyIcons": true, "applyWallpaper": true})
 }
 
-// SetSelection PUT /api/themes/selection：设置用户当前使用主题（多端同步）。
+// bodyBool 提取可选布尔（缺省返回 def）。
+func bodyBool(body map[string]any, key string, def bool) bool {
+	v, ok := body[key]
+	if !ok {
+		return def
+	}
+	return truthy(v)
+}
+
+// SetSelection PUT /api/themes/selection：设置用户当前使用主题与应用组合
+//（applyIcons / applyWallpaper 可自由勾选：仅壁纸、仅图标或全套，缺省全部应用）。
+// 勾选壁纸且主题含壁纸时，同步写入用户背景偏好（多端生效）。
 func (h *Themes) SetSelection(c *gin.Context) {
 	body := cmsReadBody(c)
 	user, _ := middleware.GetUser(c)
 	rawID, _ := body["themeId"].(string)
 	if strings.TrimSpace(rawID) == "" {
-		if err := h.Repos.Users.UpdateThemeID(c.Request.Context(), user.ID, primitive.NilObjectID); err != nil {
+		if err := h.Repos.Users.UpdateThemeSelection(c.Request.Context(), user.ID,
+			primitive.NilObjectID, nil, nil); err != nil {
 			c.JSON(500, gin.H{"message": "设置主题失败"})
 			return
 		}
@@ -262,16 +295,34 @@ func (h *Themes) SetSelection(c *gin.Context) {
 		c.JSON(403, gin.H{"message": "无权使用该主题"})
 		return
 	}
-	if err := h.Repos.Users.UpdateThemeID(c.Request.Context(), user.ID, oid); err != nil {
+	applyIcons := bodyBool(body, "applyIcons", true)
+	applyWallpaper := bodyBool(body, "applyWallpaper", true)
+	if err := h.Repos.Users.UpdateThemeSelection(c.Request.Context(), user.ID, oid,
+		&applyIcons, &applyWallpaper); err != nil {
 		c.JSON(500, gin.H{"message": "设置主题失败"})
 		return
 	}
-	c.JSON(200, gin.H{"theme": themePublicJSON(t)})
+	// 勾选壁纸部分：把主题壁纸写入用户背景偏好（保留 opacity/blur）。
+	var bgPrefs *model.BackgroundPrefs
+	if applyWallpaper && t.WallpaperURL != "" {
+		enabled := true
+		if err := h.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID,
+			repository.BackgroundPrefsPatch{Image: &t.WallpaperURL, Enabled: &enabled}); err == nil {
+			if u, err := h.Repos.Users.FindByID(c.Request.Context(), user.ID); err == nil {
+				bgPrefs = &u.BackgroundPrefs
+			}
+		}
+	}
+	resp := gin.H{"theme": themePublicJSON(t), "applyIcons": applyIcons, "applyWallpaper": applyWallpaper}
+	if bgPrefs != nil {
+		resp["backgroundPrefs"] = *bgPrefs
+	}
+	c.JSON(200, resp)
 }
 
-// Create POST /api/themes：创建主题。
+// Create POST /api/themes：创建主题（壁纸 + 图标组合包）。
 // 普通用户创建个人主题（draft，仅自己可见）；超管可传 isSystem:true 直接创建
-// 启用的系统主题。
+// 启用的系统主题。主题必须包含壁纸或图标至少其一。
 func (h *Themes) Create(c *gin.Context) {
 	body := cmsReadBody(c)
 	name := strings.TrimSpace(asString(body["name"]))
@@ -284,18 +335,34 @@ func (h *Themes) Create(c *gin.Context) {
 		c.JSON(400, gin.H{"message": "主题描述不能超过 200 个字符"})
 		return
 	}
-	vars, errMsg := sanitizeThemeVariables(asStringMap(body["variables"]))
+	wallpaperURL, errMsg := sanitizeThemeAssetURL(body["wallpaperUrl"])
 	if errMsg != "" {
 		c.JSON(400, gin.H{"message": errMsg})
 		return
 	}
+	wallpaperThumb, errMsg := sanitizeThemeAssetURL(body["wallpaperThumb"])
+	if errMsg != "" {
+		c.JSON(400, gin.H{"message": errMsg})
+		return
+	}
+	iconsRaw, _ := body["icons"].(map[string]any)
+	icons, errMsg := sanitizeThemeIcons(iconsRaw)
+	if errMsg != "" {
+		c.JSON(400, gin.H{"message": errMsg})
+		return
+	}
+	if wallpaperURL == "" && len(icons) == 0 {
+		c.JSON(400, gin.H{"message": "主题需包含壁纸或图标至少其一"})
+		return
+	}
 	user, _ := middleware.GetUser(c)
 	t := &model.Theme{
-		Name:        name,
-		Description: description,
-		Mode:        themeModeOr(body["mode"]),
-		Variables:   vars,
-		Enabled:     true,
+		Name:           name,
+		Description:    description,
+		WallpaperURL:   wallpaperURL,
+		WallpaperThumb: wallpaperThumb,
+		Icons:          icons,
+		Enabled:        true,
 	}
 	if isSuperUser(c) && truthy(body["isSystem"]) {
 		t.IsSystem = true
@@ -324,8 +391,9 @@ func canEditTheme(c *gin.Context, t *model.Theme) bool {
 	return !t.IsSystem && t.OwnerID != nil && *t.OwnerID == u.ID
 }
 
-// Update PUT /api/themes/:id：更新主题（名称/描述/变量/模式）。
+// Update PUT /api/themes/:id：更新主题（名称/描述/壁纸/图标）。
 // 系统主题仅超管可改；个人主题仅 owner 可改。
+// 显式提交壁纸/图标字段时，最终内容必须仍包含壁纸或图标至少其一。
 func (h *Themes) Update(c *gin.Context) {
 	oid, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
@@ -347,6 +415,7 @@ func (h *Themes) Update(c *gin.Context) {
 	}
 	body := cmsReadBody(c)
 	set := bson.M{"updatedAt": time.Now().UTC().Truncate(time.Millisecond)}
+	contentTouched := false
 	if v, ok := body["name"]; ok {
 		name := strings.TrimSpace(asString(v))
 		if name == "" || len([]rune(name)) > 30 {
@@ -363,16 +432,40 @@ func (h *Themes) Update(c *gin.Context) {
 		}
 		set["description"] = desc
 	}
-	if v, ok := body["mode"]; ok {
-		set["mode"] = themeModeOr(v)
-	}
-	if v, ok := body["variables"]; ok {
-		vars, errMsg := sanitizeThemeVariables(asStringMap(v))
+	finalWallpaper := t.WallpaperURL
+	if v, ok := body["wallpaperUrl"]; ok {
+		wallpaperURL, errMsg := sanitizeThemeAssetURL(v)
 		if errMsg != "" {
 			c.JSON(400, gin.H{"message": errMsg})
 			return
 		}
-		set["variables"] = vars
+		set["wallpaperUrl"] = wallpaperURL
+		finalWallpaper = wallpaperURL
+		contentTouched = true
+	}
+	if v, ok := body["wallpaperThumb"]; ok {
+		wallpaperThumb, errMsg := sanitizeThemeAssetURL(v)
+		if errMsg != "" {
+			c.JSON(400, gin.H{"message": errMsg})
+			return
+		}
+		set["wallpaperThumb"] = wallpaperThumb
+	}
+	finalIcons := t.Icons
+	if v, ok := body["icons"]; ok {
+		iconsRaw, _ := v.(map[string]any)
+		icons, errMsg := sanitizeThemeIcons(iconsRaw)
+		if errMsg != "" {
+			c.JSON(400, gin.H{"message": errMsg})
+			return
+		}
+		set["icons"] = icons
+		finalIcons = icons
+		contentTouched = true
+	}
+	if contentTouched && finalWallpaper == "" && len(finalIcons) == 0 {
+		c.JSON(400, gin.H{"message": "主题需包含壁纸或图标至少其一"})
+		return
 	}
 	updated, err := h.Repos.Themes.FindOneAndUpdate(c.Request.Context(), oid, bson.M{"$set": set})
 	if err != nil {
@@ -545,7 +638,7 @@ func (h *Themes) SetDefault(c *gin.Context) {
 	}
 	updated, err := h.Repos.Themes.FindOneAndUpdate(c.Request.Context(), oid, bson.M{"$set": bson.M{
 		"isDefault": true,
-		"updatedAt": time.Now().UTC().Truncate(time.Millisecond),
+		"updatedAt":  time.Now().UTC().Truncate(time.Millisecond),
 	}})
 	if err != nil {
 		c.JSON(500, gin.H{"message": "设置默认主题失败"})
@@ -611,4 +704,39 @@ func (h *Themes) AdminUpdate(c *gin.Context) {
 		_ = h.Repos.Themes.ClearDefaultExcept(c.Request.Context(), primitive.NilObjectID)
 	}
 	c.JSON(200, themeJSON(updated))
+}
+
+// UploadWallpaper POST /api/themes/upload-wallpaper（登录用户 + ≤8MB 图片）。
+// 上传主题用壁纸，返回 {"url": "/uploads/theme-wallpaper-xxx.png"}。
+func (h *Themes) UploadWallpaper(c *gin.Context) {
+	url, err := upload.SaveImage(c, "image", "theme-wallpaper", 8<<20)
+	if err != nil {
+		abortThemeUploadError(c, h.Config, err, "上传主题壁纸失败")
+		return
+	}
+	c.JSON(200, gin.H{"url": url})
+}
+
+// UploadIcon POST /api/themes/upload-icon（登录用户 + ≤1MB SVG）。
+// 上传主题用图标，返回 {"url": "/uploads/icons/icon-xxx.svg"}。
+func (h *Themes) UploadIcon(c *gin.Context) {
+	url, err := upload.SaveSVG(c, "file")
+	if err != nil {
+		if err == upload.ErrNoFile {
+			c.JSON(400, gin.H{"message": "请选择要上传的 SVG 图标"})
+			return
+		}
+		c.JSON(400, gin.H{"message": err.Error()})
+		return
+	}
+	c.JSON(200, gin.H{"url": url})
+}
+
+// abortThemeUploadError 渲染主题资源上传错误（复用壁纸上传错误契约）。
+func abortThemeUploadError(c *gin.Context, cfg *config.Config, err error, fallback string) {
+	if err == upload.ErrNoFile {
+		c.JSON(400, gin.H{"message": "请选择要上传的图片"})
+		return
+	}
+	abortImageUploadError(c, cfg, err, fallback)
 }

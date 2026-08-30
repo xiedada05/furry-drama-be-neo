@@ -8,6 +8,12 @@ import (
 
 // Theme 主题文档（themes 集合）。
 //
+// 主题是「壁纸 + 图标」的组合外观包（不含按钮调色：调色由左下角强调色面板承担）：
+//   - 仅壁纸（wallpaperUrl 非空、icons 为空）；
+//   - 仅图标（icons 非空、wallpaperUrl 为空）；
+//   - 全套（壁纸 + 图标）。
+// 应用主题时可自由勾选生效组合（仅壁纸 / 仅图标 / 两者）。
+//
 // 主题分两类：
 //   - 系统主题（isSystem=true）：由管理员创建，或个人主题审核通过后升级而来，
 //     全站用户可见可选；enabled 控制是否对用户开放。
@@ -20,11 +26,12 @@ type Theme struct {
 	ID          primitive.ObjectID  `bson:"_id,omitempty" json:"_id"`
 	Name        string              `bson:"name" json:"name"`
 	Description string              `bson:"description" json:"description"`
-	// Mode 是主题基础模式（dark/light），决定未覆盖变量的回退基底。
-	Mode string `bson:"mode" json:"mode"`
-	// Variables 是 CSS 变量键值对（如 "--primary": "#6366f1"），
-	// 仅存与基础模式默认值的差异即可，应用时覆盖在基底之上。
-	Variables map[string]string `bson:"variables" json:"variables"`
+	// WallpaperURL 是主题壁纸地址（空串表示不含壁纸）。
+	WallpaperURL string `bson:"wallpaperUrl" json:"wallpaperUrl"`
+	// WallpaperThumb 是壁纸缩略图地址（卡片预览用，可空，回退 WallpaperURL）。
+	WallpaperThumb string `bson:"wallpaperThumb" json:"wallpaperThumb"`
+	// Icons 是主题图标映射（组件 key → SVG URL；空表示不含图标）。
+	Icons map[string]string `bson:"icons" json:"icons"`
 	IsSystem  bool              `bson:"isSystem" json:"isSystem"`
 	// OwnerID 是个人主题的所属用户；系统主题为 nil。
 	OwnerID *primitive.ObjectID `bson:"ownerId" json:"ownerId"`
@@ -50,11 +57,33 @@ const (
 	ThemeStatusRejected = "rejected"
 )
 
-// 主题基础模式常量。
+// 主题内容类型常量（由 WallpaperURL / Icons 推导）。
 const (
-	ThemeModeDark  = "dark"
-	ThemeModeLight = "light"
+	// ThemeTypeFull 全套：壁纸 + 图标。
+	ThemeTypeFull = "full"
+	// ThemeTypeWallpaper 仅壁纸。
+	ThemeTypeWallpaper = "wallpaper"
+	// ThemeTypeIcons 仅图标。
+	ThemeTypeIcons = "icons"
+	// ThemeTypeLegacy 旧版配色主题（既无壁纸也无图标，仅历史数据）。
+	ThemeTypeLegacy = "legacy"
 )
+
+// ThemeType 返回主题内容类型（full / wallpaper / icons / legacy）。
+func (t *Theme) ThemeType() string {
+	hasWallpaper := t.WallpaperURL != ""
+	hasIcons := len(t.Icons) > 0
+	switch {
+	case hasWallpaper && hasIcons:
+		return ThemeTypeFull
+	case hasWallpaper:
+		return ThemeTypeWallpaper
+	case hasIcons:
+		return ThemeTypeIcons
+	default:
+		return ThemeTypeLegacy
+	}
+}
 
 // Icon 图标文档（icons 集合）。
 //

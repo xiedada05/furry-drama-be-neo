@@ -287,10 +287,39 @@ func (r *UserRepo) UpdateThemeID(ctx context.Context, id any, themeID primitive.
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
 	if themeID.IsZero() {
-		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{"themeId": ""}})
+		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{
+			"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
+		}})
 		return err
 	}
 	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"themeId": themeID}})
+	return err
+}
+
+// UpdateThemeSelection 更新用户当前选择的主题与应用组合（applyIcons/applyWallpaper
+// 为 nil 表示视为全部应用；themeID 为零值时清空选择与组合，回退默认主题）。
+func (r *UserRepo) UpdateThemeSelection(ctx context.Context, id any, themeID primitive.ObjectID,
+	applyIcons, applyWallpaper *bool) error {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	if themeID.IsZero() {
+		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{
+			"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
+		}})
+		return err
+	}
+	set := bson.M{"themeId": themeID}
+	if applyIcons != nil {
+		set["themeApplyIcons"] = *applyIcons
+	} else {
+		set["themeApplyIcons"] = true
+	}
+	if applyWallpaper != nil {
+		set["themeApplyWallpaper"] = *applyWallpaper
+	} else {
+		set["themeApplyWallpaper"] = true
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": set})
 	return err
 }
 
@@ -298,7 +327,9 @@ func (r *UserRepo) UpdateThemeID(ctx context.Context, id any, themeID primitive.
 func (r *UserRepo) ClearThemeReferences(ctx context.Context, themeID primitive.ObjectID) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateMany(ctx, bson.M{"themeId": themeID}, bson.M{"$unset": bson.M{"themeId": ""}})
+	_, err := r.coll.UpdateMany(ctx, bson.M{"themeId": themeID}, bson.M{"$unset": bson.M{
+		"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
+	}})
 	return err
 }
 

@@ -274,13 +274,13 @@ func (h *Wallpapers) PersonalDelete(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "已删除"})
 }
 
-// abortWallpaperUploadError 渲染壁纸上传错误（对齐 wallpapers.js 无本地错误
+// abortImageUploadError 渲染图片上传错误（对齐 wallpapers.js 无本地错误
 // 中间件时由全局错误处理分支产生的状态码/文案）：
 //   - 无文件 → 400 请选择要上传的图片
 //   - 超大小 → MulterError LIMIT_FILE_SIZE → 400 "文件上传错误: File too large"
 //   - 类型不符 → fileFilter 抛普通 Error → 全局 500（dev 暴露 message）
 //   - 魔数不符 → 400 "文件内容与类型不匹配，仅支持图片文件"
-func (h *Wallpapers) abortWallpaperUploadError(c *gin.Context, err error) {
+func abortImageUploadError(c *gin.Context, cfg *config.Config, err error, fallback string) {
 	if err == upload.ErrNoFile {
 		c.JSON(400, gin.H{"message": "请选择要上传的图片"})
 		return
@@ -291,16 +291,21 @@ func (h *Wallpapers) abortWallpaperUploadError(c *gin.Context, err error) {
 			c.JSON(400, gin.H{"message": "文件上传错误: File too large"})
 		case "LIMIT_FILE_TYPE":
 			msg := "仅支持图片文件 (jpg, jpeg, png, gif, webp)"
-			if !h.Config.IsDev {
+			if !cfg.IsDev {
 				msg = "服务器内部错误"
 			}
 			c.JSON(500, gin.H{"message": msg})
 		case "BAD_MAGIC":
 			c.JSON(400, gin.H{"message": "文件内容与类型不匹配，仅支持图片文件"})
 		default:
-			c.JSON(500, gin.H{"message": "上传系统壁纸失败"})
+			c.JSON(500, gin.H{"message": fallback})
 		}
 		return
 	}
-	c.JSON(500, gin.H{"message": "上传系统壁纸失败"})
+	c.JSON(500, gin.H{"message": fallback})
+}
+
+// abortWallpaperUploadError 是 abortImageUploadError 的壁纸域包装。
+func (h *Wallpapers) abortWallpaperUploadError(c *gin.Context, err error) {
+	abortImageUploadError(c, h.Config, err, "上传系统壁纸失败")
 }
