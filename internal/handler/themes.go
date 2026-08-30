@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -51,6 +52,7 @@ func (h *Themes) Register(g *gin.RouterGroup) {
 	g.GET("/my", h.AuthMW.Protect(), h.MyList)
 	g.GET("/my/selection", h.AuthMW.Protect(), h.MySelection)
 	g.PUT("/selection", h.AuthMW.Protect(), h.SetSelection)
+	g.PUT("/background-prefs", h.AuthMW.Protect(), h.UpdateBackgroundPrefs)
 	g.POST("/", h.AuthMW.Protect(), h.Create)
 	g.POST("/upload-wallpaper", h.AuthMW.Protect(), h.UploadWallpaper)
 	g.POST("/upload-icon", h.AuthMW.Protect(), h.UploadIcon)
@@ -263,39 +265,101 @@ func (h *Themes) accessibleTheme(c *gin.Context, t *model.Theme) bool {
 	return false
 }
 
+// resolveThemeSlot 解析一个主题槽的生效主题。
+// 优先取 slotID；为空时回落 fallbackID（旧单主题按 apply 标志拆槽）。
+// 返回：主题（nil 表示无）、是否为用户主动设置、引用是否失效需回收。
+func (h *Themes) resolveThemeSlot(ctx context.Context, c *gin.Context, user *model.User,
+	slotID, fallbackID primitive.ObjectID) (*model.Theme, bool, bool) {
+	id := slotID
+	if id.IsZero() {
+		id = fallbackID
+	}
+	if id.IsZero() {
+		return nil, false, false
+	}
+	t, err := h.Repos.Themes.FindByID(ctx, id)
+	if err != nil {
+		return nil, !slotID.IsZero(), !slotID.IsZero() || !fallbackID.IsZero()
+	}
+	if !h.accessibleTheme(c, t) {
+		return nil, !slotID.IsZero(), true
+	}
+	return t, !slotID.IsZero() || !fallbackID.IsZero(), false
+}
+
 // MySelection GET /api/themes/my/selection：获取当前用户生效主题（用户选择 > 站点默认）。
-// 响应含 applyIcons / applyWallpaper（用户勾选的应用组合，用于前端图标引擎）；
-// 未选择主题而回落站点默认主题时附带 isDefaultFallback=true（不视为用户的选择）。
+// 背景与图标为两个独立槽（支持主题A背景 + 主题B图标自由组合）：
+//   - wallpaperTheme / iconsTheme：两槽当前主题（无则为 null，回落站点默认主题）；
+//   - wallpaperIsDefault / iconsIsDefault：该槽是否为默认主题兜底（非用户主动选择）；
+//   - 兼容旧单主题字段：按 applyIcons/applyWallpaper 拆分到对应槽。
 func (h *Themes) MySelection(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
+	ctx := c.Request.Context()
+
+	// 旧单主题拆槽：applyIcons/applyWallpaper 决定旧主题落到哪个槽。
+	legacyWallpaper := user.ThemeID
+	legacyIcons := user.ThemeID
 	if !user.ThemeID.IsZero() {
-		t, err := h.Repos.Themes.FindByID(c.Request.Context(), user.ThemeID)
-		if err == nil && h.accessibleTheme(c, t) {
-			applyIcons := user.ThemeApplyIcons == nil || *user.ThemeApplyIcons
-			applyWallpaper := user.ThemeApplyWallpaper == nil || *user.ThemeApplyWallpaper
-			c.JSON(200, gin.H{
-				"theme":          themePublicJSON(t),
-				"applyIcons":     applyIcons,
-				"applyWallpaper": applyWallpaper,
-				"accentColor":    t.AccentColor,
-			})
-			return
+		if user.ThemeApplyWallpaper != nil && !*user.ThemeApplyWallpaper {
+			legacyWallpaper = primitive.NilObjectID
 		}
-		// 引用失效（主题被删/禁用）：静默回收引用。
-		_ = h.Repos.Users.UpdateThemeID(c.Request.Context(), user.ID, primitive.NilObjectID)
+		if user.ThemeApplyIcons != nil && !*user.ThemeApplyIcons {
+			legacyIcons = primitive.NilObjectID
+		}
 	}
-	// 未选择主题：回落站点默认主题（图标/壁纸对其生效，但不视为用户主动选择，
-	// 前端据 isDefaultFallback 不高亮任何主题卡片）。
-	if dt, derr := h.Repos.Themes.FindDefault(c.Request.Context()); derr == nil {
-		c.JSON(200, gin.H{
-			"theme":             themePublicJSON(dt),
-			"applyIcons":        true,
-			"applyWallpaper":    true,
-			"isDefaultFallback": true,
-		})
-		return
+
+	wallpaperTheme, _, wpStale := h.resolveThemeSlot(ctx, c, user, user.ThemeWallpaperID, legacyWallpaper)
+	iconsTheme, _, icStale := h.resolveThemeSlot(ctx, c, user, user.ThemeIconsID, legacyIcons)
+
+	// 迁移到两槽模型：清失效引用，把旧单主题选择落到对应槽（保留有效选择）。
+	if wpStale || icStale || !user.ThemeID.IsZero() {
+		newWallpaper := user.ThemeWallpaperID
+		if wpStale {
+			newWallpaper = primitive.NilObjectID
+		} else if newWallpaper.IsZero() {
+			newWallpaper = legacyWallpaper
+		}
+		newIcons := user.ThemeIconsID
+		if icStale {
+			newIcons = primitive.NilObjectID
+		} else if newIcons.IsZero() {
+			newIcons = legacyIcons
+		}
+		_ = h.Repos.Users.UpdateThemeSlots(ctx, user.ID, newWallpaper, newIcons)
 	}
-	c.JSON(200, gin.H{"theme": nil, "applyIcons": true, "applyWallpaper": true, "isDefaultFallback": false})
+
+	// 未设置的槽回落站点默认主题（生效但不视为用户主动选择，
+	// 前端据 isDefault 标记不高亮对应主题卡片）。
+	var dt *model.Theme
+	if wallpaperTheme == nil || iconsTheme == nil {
+		if d, derr := h.Repos.Themes.FindDefault(ctx); derr == nil {
+			dt = d
+		}
+	}
+	wpIsDefault := false
+	if wallpaperTheme == nil && dt != nil && dt.WallpaperURL != "" {
+		wallpaperTheme = dt
+		wpIsDefault = true
+	}
+	icIsDefault := false
+	if iconsTheme == nil && dt != nil && len(dt.Icons) > 0 {
+		iconsTheme = dt
+		icIsDefault = true
+	}
+
+	resp := gin.H{
+		"wallpaperTheme":    nil,
+		"iconsTheme":        nil,
+		"wallpaperIsDefault": wpIsDefault,
+		"iconsIsDefault":     icIsDefault,
+	}
+	if wallpaperTheme != nil {
+		resp["wallpaperTheme"] = themePublicJSON(wallpaperTheme)
+	}
+	if iconsTheme != nil {
+		resp["iconsTheme"] = themePublicJSON(iconsTheme)
+	}
+	c.JSON(200, resp)
 }
 
 // bodyBool 提取可选布尔（缺省返回 def）。
@@ -307,76 +371,217 @@ func bodyBool(body map[string]any, key string, def bool) bool {
 	return truthy(v)
 }
 
-// SetSelection PUT /api/themes/selection：设置用户当前使用主题与应用组合
-//（applyIcons / applyWallpaper 可自由勾选：仅壁纸、仅图标或全套，缺省全部应用）。
-// 勾选壁纸且主题含壁纸时，同步写入用户背景偏好（多端生效）。
+// SetSelection PUT /api/themes/selection：设置用户背景/图标两槽主题（自由组合）。
+// 新 body：{ wallpaperThemeId, iconsThemeId }——空串表示清空该槽，键不存在表示
+// 该槽保持不变；兼容旧 body { themeId, applyIcons, applyWallpaper }（拆到对应槽）。
+// 壁纸槽变更时同步写入/清空用户背景偏好（多端生效）；响应含两槽主题与背景偏好，
+// 以及被设置主题的主题色（有则前端应用、无则保持）。
 func (h *Themes) SetSelection(c *gin.Context) {
 	body := cmsReadBody(c)
 	user, _ := middleware.GetUser(c)
-	rawID, _ := body["themeId"].(string)
-	if strings.TrimSpace(rawID) == "" {
-		if err := h.Repos.Users.UpdateThemeSelection(c.Request.Context(), user.ID,
-			primitive.NilObjectID, nil, nil); err != nil {
+	ctx := c.Request.Context()
+
+	// 计算目标槽值（零值 = 清空该槽）。
+	var wallpaperID, iconsID primitive.ObjectID
+	var setWallpaper, setIcons bool // 该槽是否在本次请求中被显式指定
+	var appliedAccent string        // 被设置主题的主题色（供前端应用）
+
+	if rawID, ok := body["themeId"].(string); ok && strings.TrimSpace(rawID) != "" {
+		// 旧 body：单主题按应用组合拆槽。
+		oid, err := primitive.ObjectIDFromHex(rawID)
+		if err != nil {
+			c.JSON(400, gin.H{"message": "主题 ID 不合法"})
+			return
+		}
+		t, err := h.Repos.Themes.FindByID(ctx, oid)
+		if err != nil {
+			if repository.IsNotFound(err) {
+				c.JSON(404, gin.H{"message": "主题不存在"})
+				return
+			}
 			c.JSON(500, gin.H{"message": "设置主题失败"})
 			return
 		}
-		// 取消主题：清掉此前主题写入的壁纸偏好，壁纸回落站点默认主题（或无背景）。
-		var bgPrefs *model.BackgroundPrefs
-		emptyImage, disabled := "", false
-		if err := h.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID,
-			repository.BackgroundPrefsPatch{Image: &emptyImage, Enabled: &disabled}); err == nil {
-			if u, ferr := h.Repos.Users.FindByID(c.Request.Context(), user.ID); ferr == nil {
+		if !h.accessibleTheme(c, t) {
+			c.JSON(403, gin.H{"message": "无权使用该主题"})
+			return
+		}
+		if bodyBool(body, "applyWallpaper", true) {
+			wallpaperID, setWallpaper = oid, true
+		}
+		if bodyBool(body, "applyIcons", true) {
+			iconsID, setIcons = oid, true
+		}
+		appliedAccent = t.AccentColor
+	} else {
+		// 新 body：两槽各自设置/清空（键存在即视为显式指定）。
+		if raw, ok := body["wallpaperThemeId"].(string); ok {
+			setWallpaper = true
+			if strings.TrimSpace(raw) != "" {
+				oid, t, err := h.findValidatedTheme(c, raw, true)
+				if err != nil {
+					return
+				}
+				wallpaperID = oid
+				appliedAccent = t.AccentColor
+			}
+		}
+		if raw, ok := body["iconsThemeId"].(string); ok {
+			setIcons = true
+			if strings.TrimSpace(raw) != "" {
+				oid, t, err := h.findValidatedTheme(c, raw, false)
+				if err != nil {
+					return
+				}
+				iconsID = oid
+				if appliedAccent == "" {
+					appliedAccent = t.AccentColor
+				}
+			}
+		}
+	}
+	if !setWallpaper && !setIcons {
+		c.JSON(400, gin.H{"message": "请求需包含 wallpaperThemeId / iconsThemeId（或旧版 themeId）"})
+		return
+	}
+
+	// 未指定的槽保持现值（两槽字段优先，旧单主题按应用组合拆槽兜底）。
+	curWallpaper := user.ThemeWallpaperID
+	curIcons := user.ThemeIconsID
+	if curWallpaper.IsZero() && !user.ThemeID.IsZero() &&
+		(user.ThemeApplyWallpaper == nil || *user.ThemeApplyWallpaper) {
+		curWallpaper = user.ThemeID
+	}
+	if curIcons.IsZero() && !user.ThemeID.IsZero() &&
+		(user.ThemeApplyIcons == nil || *user.ThemeApplyIcons) {
+		curIcons = user.ThemeID
+	}
+	if !setWallpaper {
+		wallpaperID = curWallpaper
+	}
+	if !setIcons {
+		iconsID = curIcons
+	}
+
+	if err := h.Repos.Users.UpdateThemeSlots(ctx, user.ID, wallpaperID, iconsID); err != nil {
+		c.JSON(500, gin.H{"message": "设置主题失败"})
+		return
+	}
+
+	// 壁纸槽变更：写入/清空背景偏好（保留用户自调的 opacity/blur）。
+	var bgPrefs *model.BackgroundPrefs
+	if setWallpaper {
+		var patch repository.BackgroundPrefsPatch
+		if !wallpaperID.IsZero() {
+			t, err := h.Repos.Themes.FindByID(ctx, wallpaperID)
+			if err == nil {
+				enabled := true
+				patch = repository.BackgroundPrefsPatch{Image: &t.WallpaperURL, Enabled: &enabled}
+			}
+		} else {
+			emptyImage, disabled := "", false
+			patch = repository.BackgroundPrefsPatch{Image: &emptyImage, Enabled: &disabled}
+		}
+		if err := h.Repos.Users.UpdateBackgroundPrefs(ctx, user.ID, patch); err == nil {
+			if u, ferr := h.Repos.Users.FindByID(ctx, user.ID); ferr == nil {
 				bgPrefs = &u.BackgroundPrefs
 			}
 		}
-		resp := gin.H{"theme": nil}
-		if bgPrefs != nil {
-			resp["backgroundPrefs"] = *bgPrefs
-		}
-		c.JSON(200, resp)
-		return
 	}
-	oid, err := primitive.ObjectIDFromHex(rawID)
+
+	resp := gin.H{"wallpaperTheme": nil, "iconsTheme": nil}
+	if !wallpaperID.IsZero() {
+		if t, err := h.Repos.Themes.FindByID(ctx, wallpaperID); err == nil {
+			resp["wallpaperTheme"] = themePublicJSON(t)
+		}
+	}
+	if !iconsID.IsZero() {
+		if t, err := h.Repos.Themes.FindByID(ctx, iconsID); err == nil {
+			resp["iconsTheme"] = themePublicJSON(t)
+		}
+	}
+	if bgPrefs != nil {
+		resp["backgroundPrefs"] = *bgPrefs
+	}
+	if appliedAccent != "" {
+		resp["accentColor"] = appliedAccent
+	}
+	c.JSON(200, resp)
+}
+
+// findValidatedTheme 按 hex ID 查找主题并校验可用性与槽匹配内容
+//（壁纸槽需含壁纸 / 图标槽需含图标）。失败时已写入响应，调用方直接 return。
+func (h *Themes) findValidatedTheme(c *gin.Context, raw string, forWallpaper bool) (
+	primitive.ObjectID, *model.Theme, error) {
+	oid, err := primitive.ObjectIDFromHex(strings.TrimSpace(raw))
 	if err != nil {
 		c.JSON(400, gin.H{"message": "主题 ID 不合法"})
-		return
+		return primitive.NilObjectID, nil, err
 	}
 	t, err := h.Repos.Themes.FindByID(c.Request.Context(), oid)
 	if err != nil {
 		if repository.IsNotFound(err) {
 			c.JSON(404, gin.H{"message": "主题不存在"})
-			return
+			return primitive.NilObjectID, nil, err
 		}
 		c.JSON(500, gin.H{"message": "设置主题失败"})
-		return
+		return primitive.NilObjectID, nil, err
 	}
 	if !h.accessibleTheme(c, t) {
 		c.JSON(403, gin.H{"message": "无权使用该主题"})
-		return
+		return primitive.NilObjectID, nil, errors.New("forbidden")
 	}
-	applyIcons := bodyBool(body, "applyIcons", true)
-	applyWallpaper := bodyBool(body, "applyWallpaper", true)
-	if err := h.Repos.Users.UpdateThemeSelection(c.Request.Context(), user.ID, oid,
-		&applyIcons, &applyWallpaper); err != nil {
-		c.JSON(500, gin.H{"message": "设置主题失败"})
-		return
+	if forWallpaper && t.WallpaperURL == "" {
+		c.JSON(400, gin.H{"message": "该主题不含壁纸，无法应用到背景"})
+		return primitive.NilObjectID, nil, errors.New("no wallpaper")
 	}
-	// 勾选壁纸部分：把主题壁纸写入用户背景偏好（保留 opacity/blur）。
-	var bgPrefs *model.BackgroundPrefs
-	if applyWallpaper && t.WallpaperURL != "" {
-		enabled := true
-		if err := h.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID,
-			repository.BackgroundPrefsPatch{Image: &t.WallpaperURL, Enabled: &enabled}); err == nil {
-			if u, err := h.Repos.Users.FindByID(c.Request.Context(), user.ID); err == nil {
-				bgPrefs = &u.BackgroundPrefs
-			}
+	if !forWallpaper && len(t.Icons) == 0 {
+		c.JSON(400, gin.H{"message": "该主题不含图标，无法应用到图标"})
+		return primitive.NilObjectID, nil, errors.New("no icons")
+	}
+	return oid, t, nil
+}
+
+// UpdateBackgroundPrefs PUT /api/themes/background-prefs：用户调整当前背景的
+// 透明度 / 模糊度 / 单独开关（不改 image——壁纸图片由主题槽驱动）。
+func (h *Themes) UpdateBackgroundPrefs(c *gin.Context) {
+	body := cmsReadBody(c)
+	user, _ := middleware.GetUser(c)
+	patch := repository.BackgroundPrefsPatch{}
+	if v, ok := body["opacity"]; ok {
+		n := toInt(v)
+		if n < 0 || n > 100 {
+			c.JSON(400, gin.H{"message": "透明度需在 0-100 之间"})
+			return
 		}
+		patch.Opacity = &n
 	}
-	resp := gin.H{"theme": themePublicJSON(t), "applyIcons": applyIcons, "applyWallpaper": applyWallpaper}
-	if bgPrefs != nil {
-		resp["backgroundPrefs"] = *bgPrefs
+	if v, ok := body["blur"]; ok {
+		n := toInt(v)
+		if n < 0 || n > 40 {
+			c.JSON(400, gin.H{"message": "模糊度需在 0-40 之间"})
+			return
+		}
+		patch.Blur = &n
 	}
-	c.JSON(200, resp)
+	if v, ok := body["enabled"]; ok {
+		b := truthy(v)
+		patch.Enabled = &b
+	}
+	if patch.Opacity == nil && patch.Blur == nil && patch.Enabled == nil {
+		c.JSON(400, gin.H{"message": "请求需包含 opacity / blur / enabled 至少其一"})
+		return
+	}
+	if err := h.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID, patch); err != nil {
+		c.JSON(500, gin.H{"message": "保存背景设置失败"})
+		return
+	}
+	u, err := h.Repos.Users.FindByID(c.Request.Context(), user.ID)
+	if err != nil {
+		c.JSON(500, gin.H{"message": "保存背景设置失败"})
+		return
+	}
+	c.JSON(200, gin.H{"backgroundPrefs": u.BackgroundPrefs})
 }
 
 // Create POST /api/themes：创建主题（壁纸 + 图标组合包）。

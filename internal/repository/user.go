@@ -282,54 +282,71 @@ func (r *UserRepo) UpdateBackgroundPrefs(ctx context.Context, id any, p Backgrou
 	return err
 }
 
-// UpdateThemeID 更新用户当前选择的主题（themeID 为零值时 $unset，回退默认主题）。
-func (r *UserRepo) UpdateThemeID(ctx context.Context, id any, themeID primitive.ObjectID) error {
+// UpdateThemeSlots 更新用户背景/图标两槽主题（零值槽为 $unset 表示清空该槽）。
+// 写入时同时清除旧版单主题字段（themeId/themeApply*），完成向两槽模型的迁移。
+func (r *UserRepo) UpdateThemeSlots(ctx context.Context, id any,
+	wallpaperID, iconsID primitive.ObjectID) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	if themeID.IsZero() {
-		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{
-			"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
-		}})
-		return err
-	}
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": bson.M{"themeId": themeID}})
-	return err
-}
-
-// UpdateThemeSelection 更新用户当前选择的主题与应用组合（applyIcons/applyWallpaper
-// 为 nil 表示视为全部应用；themeID 为零值时清空选择与组合，回退默认主题）。
-func (r *UserRepo) UpdateThemeSelection(ctx context.Context, id any, themeID primitive.ObjectID,
-	applyIcons, applyWallpaper *bool) error {
-	ctx, cancel := r.newCtx(ctx)
-	defer cancel()
-	if themeID.IsZero() {
-		_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$unset": bson.M{
-			"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
-		}})
-		return err
-	}
-	set := bson.M{"themeId": themeID}
-	if applyIcons != nil {
-		set["themeApplyIcons"] = *applyIcons
+	unset := bson.M{"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": ""}
+	set := bson.M{}
+	if !wallpaperID.IsZero() {
+		set["themeWallpaperId"] = wallpaperID
 	} else {
-		set["themeApplyIcons"] = true
+		unset["themeWallpaperId"] = ""
 	}
-	if applyWallpaper != nil {
-		set["themeApplyWallpaper"] = *applyWallpaper
+	if !iconsID.IsZero() {
+		set["themeIconsId"] = iconsID
 	} else {
-		set["themeApplyWallpaper"] = true
+		unset["themeIconsId"] = ""
 	}
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, bson.M{"$set": set})
+	update := bson.M{"$unset": unset}
+	if len(set) > 0 {
+		update["$set"] = set
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(id)}, update)
 	return err
 }
 
 // ClearThemeReferences 把所有选择了 themeID 的用户重置为未选择（主题删除后回收）。
+// 覆盖旧单主题字段与两槽字段；清掉壁纸槽的用户同时回收背景偏好。
 func (r *UserRepo) ClearThemeReferences(ctx context.Context, themeID primitive.ObjectID) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateMany(ctx, bson.M{"themeId": themeID}, bson.M{"$unset": bson.M{
+	filter := bson.M{"$or": bson.A{
+		bson.M{"themeId": themeID},
+		bson.M{"themeWallpaperId": themeID},
+		bson.M{"themeIconsId": themeID},
+	}}
+	unset := bson.M{
 		"themeId": "", "themeApplyIcons": "", "themeApplyWallpaper": "",
-	}})
+	}
+	unsetWallpaper := bson.M{}
+	for k, v := range unset {
+		unsetWallpaper[k] = v
+	}
+	unsetWallpaper["themeWallpaperId"] = ""
+	unsetIcons := bson.M{}
+	for k, v := range unset {
+		unsetIcons[k] = v
+	}
+	unsetIcons["themeIconsId"] = ""
+	// 三类更新分开执行（$unset 组合不同）：
+	// 1) 仅壁纸槽引用该主题：清壁纸槽 + 背景偏好。
+	_, err := r.coll.UpdateMany(ctx, bson.M{"themeWallpaperId": themeID}, bson.M{
+		"$unset": unsetWallpaper,
+		"$set":   bson.M{"backgroundPrefs.image": "", "backgroundPrefs.enabled": false},
+	})
+	if err != nil {
+		return err
+	}
+	// 2) 仅图标槽引用该主题：清图标槽。
+	_, err = r.coll.UpdateMany(ctx, bson.M{"themeIconsId": themeID}, bson.M{"$unset": unsetIcons})
+	if err != nil {
+		return err
+	}
+	// 3) 旧单主题字段或两槽同时命中（前两步已清对应槽，此处兜底清旧字段）。
+	_, err = r.coll.UpdateMany(ctx, filter, bson.M{"$unset": unset})
 	return err
 }
 
