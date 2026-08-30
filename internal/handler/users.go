@@ -9,7 +9,6 @@ import (
 
 	"github.com/xiedada05/furry-drama-be-neo/internal/errors"
 	"github.com/xiedada05/furry-drama-be-neo/internal/middleware"
-	"github.com/xiedada05/furry-drama-be-neo/internal/repository"
 	"github.com/xiedada05/furry-drama-be-neo/internal/upload"
 )
 
@@ -37,71 +36,6 @@ func (h *Auth) Avatar(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"url": url})
-}
-
-// BackgroundUpload POST /api/users/background-upload（protect + 5MB）。
-// @Summary 上传背景图
-// @Tags 用户
-// @Security bearerAuth
-// @Accept multipart/form-data
-// @Param image formData file true "图片（≤5MB）"
-// @Success 200 {object} map[string]string "url"
-// @Router /users/background-upload [post]
-func (h *Auth) BackgroundUpload(c *gin.Context) {
-	url, err := upload.SaveImage(c, "image", "bg", 5<<20)
-	if err != nil {
-		h.abortUploadError(c, err, 5)
-		return
-	}
-	user, _ := middleware.GetUser(c)
-	if err := h.Svc.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID,
-		repository.BackgroundPrefsPatch{Image: &url}); err != nil {
-		c.JSON(500, gin.H{"message": "背景图片上传失败"})
-		return
-	}
-	c.JSON(200, gin.H{"url": url})
-}
-
-// BackgroundPrefs PUT /api/users/background-prefs（protect）。
-// @Summary 更新背景偏好
-// @Tags 用户
-// @Security bearerAuth
-// @Accept json
-// @Param body body object true "enabled/opacity/blur/image"
-// @Success 200 {object} map[string]any "backgroundPrefs"
-// @Router /users/background-prefs [put]
-func (h *Auth) BackgroundPrefs(c *gin.Context) {
-	var req struct {
-		Enabled *bool   `json:"enabled"`
-		Opacity *int    `json:"opacity"`
-		Blur    *int    `json:"blur"`
-		Image   *string `json:"image"`
-	}
-	_ = c.ShouldBindJSON(&req)
-	// 对齐 users.js：opacity clamp [0,100]，blur clamp [0,20]。
-	patch := repository.BackgroundPrefsPatch{
-		Enabled: req.Enabled,
-		Image:   req.Image,
-	}
-	if req.Opacity != nil {
-		v := clampInt(*req.Opacity, 0, 100)
-		patch.Opacity = &v
-	}
-	if req.Blur != nil {
-		v := clampInt(*req.Blur, 0, 20)
-		patch.Blur = &v
-	}
-	user, _ := middleware.GetUser(c)
-	if err := h.Svc.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID, patch); err != nil {
-		c.JSON(500, gin.H{"message": "更新背景偏好失败"})
-		return
-	}
-	u, err := h.Svc.Repos.Users.FindByID(c.Request.Context(), user.ID)
-	if err != nil {
-		c.JSON(500, gin.H{"message": "更新背景偏好失败"})
-		return
-	}
-	c.JSON(200, gin.H{"backgroundPrefs": u.BackgroundPrefs})
 }
 
 // Profile PUT /api/users/profile（protect）。
@@ -202,14 +136,4 @@ func (h *Auth) abortUploadError(c *gin.Context, err error, maxMB int) {
 func removeUploadedFile(url string) error {
 	path := strings.TrimPrefix(url, "/uploads/")
 	return upload.RemoveFile(path)
-}
-
-func clampInt(v, min, max int) int {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
 }

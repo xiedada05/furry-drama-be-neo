@@ -74,8 +74,6 @@ func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts)
 
 	router.MountDual(api, "/users", func(g *gin.RouterGroup) {
 		g.POST("/avatar", amw.Protect(), h.Avatar)
-		g.POST("/background-upload", amw.Protect(), h.BackgroundUpload)
-		g.PUT("/background-prefs", amw.Protect(), h.BackgroundPrefs)
 		g.PUT("/profile", amw.Protect(), h.Profile)
 		g.GET("/export-my-data", amw.Protect(), rl(ratelimit.ExportSpec), h.ExportMyData)
 	})
