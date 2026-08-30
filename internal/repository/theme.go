@@ -150,4 +150,11 @@ func (r *ThemeRepo) ClearDefaultExcept(ctx context.Context, excludeID primitive.
 	return err
 }
 
+// CountPending 统计待审核主题数（仪表盘待办徽章用）。
+func (r *ThemeRepo) CountPending(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	return r.coll.CountDocuments(ctx, bson.M{"status": model.ThemeStatusPending})
+}
+
 

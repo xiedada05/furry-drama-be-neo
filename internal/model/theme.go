@@ -32,6 +32,9 @@ type Theme struct {
 	WallpaperThumb string `bson:"wallpaperThumb" json:"wallpaperThumb"`
 	// Icons 是主题图标映射（组件 key → SVG URL；空表示不含图标）。
 	Icons map[string]string `bson:"icons" json:"icons"`
+	// AccentColor 是主题可选强调色（#rrggbb；空串表示不改变用户主题色，
+	// 应用主题时「有则应用、无则保持用户当前主题色」）。
+	AccentColor string `bson:"accentColor" json:"accentColor"`
 	IsSystem  bool              `bson:"isSystem" json:"isSystem"`
 	// OwnerID 是个人主题的所属用户；系统主题为 nil。
 	OwnerID *primitive.ObjectID `bson:"ownerId" json:"ownerId"`

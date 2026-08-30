@@ -268,7 +268,12 @@ func (h *Admin) PendingCounts(c *gin.Context) {
 		c.JSON(500, gin.H{"message": "服务器错误"})
 		return
 	}
-	c.JSON(200, gin.H{"episodes": episodes, "reports": reports, "feedbacks": feedbacks, "friendLinks": friendLinks})
+	themes, err := h.Repos.Themes.CountPending(ctx)
+	if err != nil {
+		c.JSON(500, gin.H{"message": "服务器错误"})
+		return
+	}
+	c.JSON(200, gin.H{"episodes": episodes, "reports": reports, "feedbacks": feedbacks, "friendLinks": friendLinks, "themes": themes})
 }
 
 // Logout POST /api/admin/logout（adminProtect）。双 Token 登出并清 cookie。

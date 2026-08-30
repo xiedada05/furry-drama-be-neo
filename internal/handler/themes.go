@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -82,6 +84,7 @@ func themeJSON(t *model.Theme) gin.H {
 		"wallpaperUrl":   t.WallpaperURL,
 		"wallpaperThumb": t.WallpaperThumb,
 		"icons":          themeIconsOr(t.Icons),
+		"accentColor":    t.AccentColor,
 		"themeType":      t.ThemeType(),
 		"isSystem":       t.IsSystem,
 		"ownerId":        ownerID,
@@ -104,6 +107,7 @@ func themePublicJSON(t *model.Theme) gin.H {
 		"wallpaperUrl":   t.WallpaperURL,
 		"wallpaperThumb": t.WallpaperThumb,
 		"icons":          themeIconsOr(t.Icons),
+		"accentColor":    t.AccentColor,
 		"themeType":      t.ThemeType(),
 		"isSystem":       t.IsSystem,
 		"isDefault":      t.IsDefault,
@@ -132,8 +136,34 @@ func sanitizeThemeAssetURL(v any) (string, string) {
 	return s, ""
 }
 
+// sanitizeThemeAccentColor 校验主题强调色（空串 = 不设置；否则必须 #rrggbb）。
+func sanitizeThemeAccentColor(v any) (string, string) {
+	s, ok := v.(string)
+	if !ok {
+		return "", "主题色必须为字符串"
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", ""
+	}
+	if !themeHexColorRe.MatchString(s) {
+		return "", "主题色格式不合法（须为 #rrggbb）"
+	}
+	return s, ""
+}
+
+// themeHexColorRe 合法主题色正则（#rrggbb）。
+var themeHexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+// themeProtectedIconKeys 是不允许被主题覆盖的组件标识（站点身份类图标，
+// 如站点 Logo：主题是用户外观包，不应篡改站点品牌资产）。
+var themeProtectedIconKeys = map[string]bool{
+	"misc.logo": true,
+}
+
 // sanitizeThemeIcons 校验并规范化主题图标映射：
-//   - key 必须是合法组件标识（复用图标映射正则，如 nav.home）；
+//   - key 必须是合法组件标识（复用图标映射正则，如 nav.home），
+//     且不在 themeProtectedIconKeys 保护名单内（站点 Logo 等不可覆盖）；
 //   - value 必须是 /uploads/ 或 http(s) 资源地址；
 //   - 最多 64 个映射。
 func sanitizeThemeIcons(input map[string]any) (map[string]string, string) {
@@ -147,6 +177,9 @@ func sanitizeThemeIcons(input map[string]any) (map[string]string, string) {
 	for k, v := range input {
 		if !iconMappingKeyRe.MatchString(k) {
 			return nil, "图标映射标识不合法: " + k
+		}
+		if themeProtectedIconKeys[k] {
+			return nil, "该图标不允许通过主题覆盖: " + k
 		}
 		s, ok := v.(string)
 		if !ok {
@@ -243,6 +276,7 @@ func (h *Themes) MySelection(c *gin.Context) {
 				"theme":          themePublicJSON(t),
 				"applyIcons":     applyIcons,
 				"applyWallpaper": applyWallpaper,
+				"accentColor":    t.AccentColor,
 			})
 			return
 		}
@@ -351,6 +385,11 @@ func (h *Themes) Create(c *gin.Context) {
 		c.JSON(400, gin.H{"message": errMsg})
 		return
 	}
+	accentColor, errMsg := sanitizeThemeAccentColor(body["accentColor"])
+	if errMsg != "" {
+		c.JSON(400, gin.H{"message": errMsg})
+		return
+	}
 	if wallpaperURL == "" && len(icons) == 0 {
 		c.JSON(400, gin.H{"message": "主题需包含壁纸或图标至少其一"})
 		return
@@ -362,6 +401,7 @@ func (h *Themes) Create(c *gin.Context) {
 		WallpaperURL:   wallpaperURL,
 		WallpaperThumb: wallpaperThumb,
 		Icons:          icons,
+		AccentColor:    accentColor,
 		Enabled:        true,
 	}
 	if isSuperUser(c) && truthy(body["isSystem"]) {
@@ -462,6 +502,14 @@ func (h *Themes) Update(c *gin.Context) {
 		set["icons"] = icons
 		finalIcons = icons
 		contentTouched = true
+	}
+	if v, ok := body["accentColor"]; ok {
+		accentColor, errMsg := sanitizeThemeAccentColor(v)
+		if errMsg != "" {
+			c.JSON(400, gin.H{"message": errMsg})
+			return
+		}
+		set["accentColor"] = accentColor
 	}
 	if contentTouched && finalWallpaper == "" && len(finalIcons) == 0 {
 		c.JSON(400, gin.H{"message": "主题需包含壁纸或图标至少其一"})
@@ -613,7 +661,34 @@ func (h *Themes) Review(c *gin.Context) {
 		c.JSON(500, gin.H{"message": "审核失败"})
 		return
 	}
+	// 审核结果站内通知主题作者（fire-and-forget，与剧集审核通知一致）。
+	h.notifyThemeReviewResult(updated, action, note)
 	c.JSON(200, themeJSON(updated))
+}
+
+// notifyThemeReviewResult 主题审核结果站内通知（对齐创作者主页审核通知模式）。
+func (h *Themes) notifyThemeReviewResult(t *model.Theme, action, note string) {
+	if t == nil || t.OwnerID == nil {
+		return
+	}
+	var message string
+	if action == "approve" {
+		message = "您的主题「" + t.Name + "」已通过审核并上架主题市场"
+	} else {
+		message = "您的主题「" + t.Name + "」未通过审核"
+		if note != "" {
+			message += "：" + note
+		}
+	}
+	notif := &model.Notification{
+		UserID:    *t.OwnerID,
+		Type:      "theme_review",
+		Message:   message,
+		Link:      "/settings",
+		Metadata:  primitive.M{"status": action, "note": note, "themeId": t.ID.Hex()},
+		CreatedAt: time.Now(),
+	}
+	_ = h.Repos.Notifications.Create(context.Background(), notif)
 }
 
 // SetDefault POST /api/themes/:id/default（superadmin）：设为站点默认主题（全站唯一）。
