@@ -813,6 +813,28 @@ func (h *Themes) AdminUpdate(c *gin.Context) {
 	if v, ok := body["enabled"]; ok {
 		set["enabled"] = truthy(v)
 	}
+	// 默认主题开关（与 SetDefault 等价，供管理端开关直调）：
+	// 开启需为「更新后」启用的系统主题；关闭直接取消（站点允许无默认主题）。
+	if v, ok := body["isDefault"]; ok {
+		wantDefault := truthy(v)
+		if wantDefault {
+			finalSystem := t.IsSystem
+			if sv, ok := body["isSystem"]; ok {
+				finalSystem = truthy(sv)
+			}
+			finalEnabled := t.Enabled
+			if ev, ok := body["enabled"]; ok {
+				finalEnabled = truthy(ev)
+			}
+			if !finalSystem || !finalEnabled {
+				c.JSON(400, gin.H{"message": "只有启用的系统主题才能设为默认"})
+				return
+			}
+			set["isDefault"] = true
+		} else {
+			set["isDefault"] = false
+		}
+	}
 	updated, err := h.Repos.Themes.FindOneAndUpdate(c.Request.Context(), oid, bson.M{"$set": set})
 	if err != nil {
 		if repository.IsNotFound(err) {
@@ -827,6 +849,9 @@ func (h *Themes) AdminUpdate(c *gin.Context) {
 		updated.IsDefault = false
 		_, _ = h.Repos.Themes.FindOneAndUpdate(c.Request.Context(), oid, bson.M{"$set": bson.M{"isDefault": false}})
 		_ = h.Repos.Themes.ClearDefaultExcept(c.Request.Context(), primitive.NilObjectID)
+	} else if updated.IsDefault {
+		// 设为默认后清除其它主题的默认标记（保持全站唯一）。
+		_ = h.Repos.Themes.ClearDefaultExcept(c.Request.Context(), oid)
 	}
 	c.JSON(200, themeJSON(updated))
 }
