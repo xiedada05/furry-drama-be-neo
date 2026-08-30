@@ -263,8 +263,9 @@ func (h *Themes) accessibleTheme(c *gin.Context, t *model.Theme) bool {
 	return false
 }
 
-// MySelection GET /api/themes/my/selection：获取当前用户生效主题（用户选择 > 默认）。
-// 响应含 applyIcons / applyWallpaper（用户勾选的应用组合，用于前端图标引擎）。
+// MySelection GET /api/themes/my/selection：获取当前用户生效主题（用户选择 > 站点默认）。
+// 响应含 applyIcons / applyWallpaper（用户勾选的应用组合，用于前端图标引擎）；
+// 未选择主题而回落站点默认主题时附带 isDefaultFallback=true（不视为用户的选择）。
 func (h *Themes) MySelection(c *gin.Context) {
 	user, _ := middleware.GetUser(c)
 	if !user.ThemeID.IsZero() {
@@ -283,7 +284,18 @@ func (h *Themes) MySelection(c *gin.Context) {
 		// 引用失效（主题被删/禁用）：静默回收引用。
 		_ = h.Repos.Users.UpdateThemeID(c.Request.Context(), user.ID, primitive.NilObjectID)
 	}
-	c.JSON(200, gin.H{"theme": nil, "applyIcons": true, "applyWallpaper": true})
+	// 未选择主题：回落站点默认主题（图标/壁纸对其生效，但不视为用户主动选择，
+	// 前端据 isDefaultFallback 不高亮任何主题卡片）。
+	if dt, derr := h.Repos.Themes.FindDefault(c.Request.Context()); derr == nil {
+		c.JSON(200, gin.H{
+			"theme":             themePublicJSON(dt),
+			"applyIcons":        true,
+			"applyWallpaper":    true,
+			"isDefaultFallback": true,
+		})
+		return
+	}
+	c.JSON(200, gin.H{"theme": nil, "applyIcons": true, "applyWallpaper": true, "isDefaultFallback": false})
 }
 
 // bodyBool 提取可选布尔（缺省返回 def）。
@@ -308,7 +320,20 @@ func (h *Themes) SetSelection(c *gin.Context) {
 			c.JSON(500, gin.H{"message": "设置主题失败"})
 			return
 		}
-		c.JSON(200, gin.H{"theme": nil})
+		// 取消主题：清掉此前主题写入的壁纸偏好，壁纸回落站点默认主题（或无背景）。
+		var bgPrefs *model.BackgroundPrefs
+		emptyImage, disabled := "", false
+		if err := h.Repos.Users.UpdateBackgroundPrefs(c.Request.Context(), user.ID,
+			repository.BackgroundPrefsPatch{Image: &emptyImage, Enabled: &disabled}); err == nil {
+			if u, ferr := h.Repos.Users.FindByID(c.Request.Context(), user.ID); ferr == nil {
+				bgPrefs = &u.BackgroundPrefs
+			}
+		}
+		resp := gin.H{"theme": nil}
+		if bgPrefs != nil {
+			resp["backgroundPrefs"] = *bgPrefs
+		}
+		c.JSON(200, resp)
 		return
 	}
 	oid, err := primitive.ObjectIDFromHex(rawID)
@@ -691,7 +716,10 @@ func (h *Themes) notifyThemeReviewResult(t *model.Theme, action, note string) {
 	_ = h.Repos.Notifications.Create(context.Background(), notif)
 }
 
-// SetDefault POST /api/themes/:id/default（superadmin）：设为站点默认主题（全站唯一）。
+// SetDefault POST /api/themes/:id/default（superadmin）：设置/取消站点默认主题（全站唯一）。
+// body: {"default": true|false}，缺省视为 true（兼容旧「设为默认」调用）。
+//   - true：设为默认（仅限启用的系统主题），并清除其它主题的默认标记；
+//   - false：取消该主题的默认标记，取消后站点允许没有任何默认主题。
 func (h *Themes) SetDefault(c *gin.Context) {
 	oid, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
@@ -705,6 +733,28 @@ func (h *Themes) SetDefault(c *gin.Context) {
 			return
 		}
 		c.JSON(500, gin.H{"message": "设置默认主题失败"})
+		return
+	}
+	body := cmsReadBody(c)
+	wantDefault := true
+	if v, ok := body["default"]; ok {
+		wantDefault = truthy(v)
+	}
+	if !wantDefault {
+		// 取消默认：仅系统主题可操作（个人主题本就不可能是默认）。
+		if !t.IsSystem {
+			c.JSON(400, gin.H{"message": "只有系统主题可以取消默认"})
+			return
+		}
+		updated, err := h.Repos.Themes.FindOneAndUpdate(c.Request.Context(), oid, bson.M{"$set": bson.M{
+			"isDefault": false,
+			"updatedAt":  time.Now().UTC().Truncate(time.Millisecond),
+		}})
+		if err != nil {
+			c.JSON(500, gin.H{"message": "取消默认主题失败"})
+			return
+		}
+		c.JSON(200, themeJSON(updated))
 		return
 	}
 	if !t.IsSystem || !t.Enabled {
