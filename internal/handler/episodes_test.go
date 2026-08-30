@@ -568,7 +568,8 @@ func TestEpisodesSearchSuggestionsPopularTags(t *testing.T) {
 	if resp.StatusCode != 200 || len(ptags) == 0 {
 		t.Fatalf("popular-tags: %d %v", resp.StatusCode, ptags)
 	}
-	if ptags[0].(map[string]any)["name"] != "奇幻" {
+	// 两标签 count 并列（各 1），排序兜底为名称二进制序：冒险(U+5192) < 奇幻(U+5947)。
+	if ptags[0].(map[string]any)["name"] != "冒险" {
 		t.Fatalf("popular-tags first: %v", ptags[0])
 	}
 

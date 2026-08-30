@@ -397,7 +397,9 @@ func (h *Episodes) PopularTags(c *gin.Context) {
 		}}},
 		{{Key: "$unwind", Value: "$tags"}},
 		{{Key: "$group", Value: bson.M{"_id": "$tags", "count": bson.M{"$sum": 1}}}},
-		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}}}},
+		// count 并列时按名称排序兜底：$group 输出顺序不确定，无次级键会导致
+		// 相同请求多次返回不同顺序（前端标签云跳动、测试不稳定）。
+		{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}, {Key: "_id", Value: 1}}}},
 		{{Key: "$limit", Value: 20}},
 		{{Key: "$project", Value: bson.M{"_id": 0, "name": "$_id", "count": 1}}},
 	}
