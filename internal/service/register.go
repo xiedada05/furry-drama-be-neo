@@ -70,7 +70,8 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*Register
 	if exists, err := s.Repos.Users.ExistsByEmail(ctx, email); err != nil {
 		return nil, errors.New(500, "服务器错误")
 	} else if exists {
-		return nil, errors.New(400, "该邮箱已被注册")
+		// 附带 emailTaken 标志，前端引导去登录（切换登录时可预填该邮箱）。
+		return nil, errors.NewExtra(400, "该邮箱已被注册", map[string]any{"emailTaken": true})
 	}
 	if exists, err := s.Repos.Users.ExistsByAccountID(ctx, accountID); err != nil {
 		return nil, errors.New(500, "服务器错误")

@@ -50,7 +50,9 @@ func (s *AuthService) Login(c *gin.Context, in LoginInput) (*LoginResult, error)
 
 	user, err := s.Repos.Users.FindByEmailWithAuth(ctx, emailAddr)
 	if err != nil {
-		return nil, errors.New(400, "用户名或密码错误")
+		// 邮箱不存在：附带 accountNotFound 标志，前端引导去注册。
+		//（注册接口已暴露邮箱存在性判断，此处不额外增加枚举面。）
+		return nil, errors.NewExtra(400, "该邮箱尚未注册，请先注册账号", map[string]any{"accountNotFound": true})
 	}
 	if repository.IsLocked(user) {
 		return nil, errors.New(400, "用户名或密码错误")

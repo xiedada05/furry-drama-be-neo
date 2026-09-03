@@ -25,6 +25,9 @@ type AppError struct {
 	Cause error
 	// IsOperational 标识"预期内的操作错误"；非操作错误（如 panic、DB 断连）在生产隐藏详情。
 	IsOperational bool
+	// Extra 附加到响应体的标志字段（如登录"账号不存在"的 accountNotFound、
+	// 注册"邮箱已占用"的 emailTaken），供前端做下一步引导（跳注册/跳登录）。
+	Extra map[string]any
 }
 
 // Error 实现 error 接口。
@@ -46,6 +49,12 @@ func New(status int, message string) *AppError {
 // NewKey 构造带 messageKey 的操作错误（鉴权中间件使用）。
 func NewKey(status int, message, messageKey string) *AppError {
 	return &AppError{Message: message, Status: status, MessageKey: messageKey, IsOperational: true}
+}
+
+// NewExtra 构造带附加标志字段的操作错误（响应体 message 之外携带布尔标志，
+// 供前端识别分支并做引导跳转，如 accountNotFound / emailTaken）。
+func NewExtra(status int, message string, extra map[string]any) *AppError {
+	return &AppError{Message: message, Status: status, Extra: extra, IsOperational: true}
 }
 
 // Wrap 包裹底层错误为一个操作错误。
@@ -107,6 +116,12 @@ func abortAppError(c *gin.Context, ae *AppError, isDev bool) {
 	body := gin.H{"message": msg}
 	if ae.MessageKey != "" {
 		body["messageKey"] = ae.MessageKey
+	}
+	for k, v := range ae.Extra {
+		if k == "message" || k == "messageKey" {
+			continue // 保留字段不允许被 Extra 覆盖
+		}
+		body[k] = v
 	}
 	if isDev && status >= 500 && ae.Cause != nil {
 		body["stack"] = ae.Cause.Error()
