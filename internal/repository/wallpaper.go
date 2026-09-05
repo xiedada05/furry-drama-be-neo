@@ -39,6 +39,15 @@ func (r *WallpaperRepo) FindEnabled(ctx context.Context) ([]model.SystemWallpape
 	return list, nil
 }
 
+// ExistsByURL 判断系统壁纸库是否存在引用该 URL 的记录（删除主题时防止误删
+// 主题壁纸与系统壁纸共用的文件）。
+func (r *WallpaperRepo) ExistsByURL(ctx context.Context, url string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	n, err := r.coll.CountDocuments(ctx, bson.M{"$or": []bson.M{{"url": url}, {"thumbnailUrl": url}}})
+	return n > 0, err
+}
+
 // FindAll 查询全部系统壁纸（含禁用），按 sortOrder 升序/createdAt 倒序（对齐 GET /system/all）。
 func (r *WallpaperRepo) FindAll(ctx context.Context) ([]model.SystemWallpaper, error) {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)

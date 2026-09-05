@@ -100,3 +100,55 @@ func TestRateLimitAuthSkip(t *testing.T) {
 		}
 	}
 }
+
+// TestRateLimitClientIPHeaders 生产（trustXFF）下客户端 IP 解析优先级：
+// CF-Connecting-IP > X-Real-IP > X-Forwarded-For 首值 > RemoteAddr；
+// 不同头代表不同用户时各自独立计数（不共享限流桶）。
+// 注意 TrustXFF 由 app.go 传入（!IsDev），构造时必须显式置 true 才会走头解析分支。
+func TestRateLimitClientIPHeaders(t *testing.T) {
+	spec := ratelimit.Spec{Name: "probe", Mounts: []string{"/probe"}, Window: time.Minute, Max: 1, Message: "x"}
+	r := newTestLimitEngine(spec, RateLimitOpts{IsDev: false, TrustXFF: true}, "/api/probe")
+
+	get := func(headers map[string]string) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/probe", nil)
+		req.RemoteAddr = "10.0.0.1:1234"
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	// 同一 CF IP 第 2 次 → 429；换一个 CF IP 又能过（桶按 IP 分离）。
+	if c := get(map[string]string{"CF-Connecting-IP": "1.1.1.1"}); c != 200 {
+		t.Fatalf("CF IP 第一次应通过: %d", c)
+	}
+	if c := get(map[string]string{"CF-Connecting-IP": "1.1.1.1"}); c != 429 {
+		t.Fatalf("CF IP 第二次应 429: %d", c)
+	}
+	if c := get(map[string]string{"CF-Connecting-IP": "2.2.2.2"}); c != 200 {
+		t.Fatalf("不同 CF IP 应独立计数: %d", c)
+	}
+	// CF 优先于 X-Real-IP 与 XFF（CF 与 XRI 不同值时按 CF 计）。
+	if c := get(map[string]string{
+		"CF-Connecting-IP": "1.1.1.1", "X-Real-IP": "9.9.9.9", "X-Forwarded-For": "8.8.8.8",
+	}); c != 429 {
+		t.Fatalf("CF-Connecting-IP 应优先: %d", c)
+	}
+	// 无 CF 时 X-Real-IP 优先于 XFF。
+	if c := get(map[string]string{"X-Real-IP": "3.3.3.3", "X-Forwarded-For": "1.1.1.1"}); c != 200 {
+		t.Fatalf("X-Real-IP 应优先于 XFF: %d", c)
+	}
+	// 仅 XFF 时取首值。
+	if c := get(map[string]string{"X-Forwarded-For": "4.4.4.4, 5.5.5.5"}); c != 200 {
+		t.Fatalf("XFF 首值应作为独立桶: %d", c)
+	}
+	if c := get(map[string]string{"X-Forwarded-For": "4.4.4.4, 5.5.5.5"}); c != 429 {
+		t.Fatalf("同 XFF 首值第二次应 429: %d", c)
+	}
+	// 无任何头 → RemoteAddr（10.0.0.1 独立桶）。
+	if c := get(nil); c != 200 {
+		t.Fatalf("RemoteAddr 应作为独立桶: %d", c)
+	}
+}

@@ -157,4 +157,20 @@ func (r *ThemeRepo) CountPending(ctx context.Context) (int64, error) {
 	return r.coll.CountDocuments(ctx, bson.M{"status": model.ThemeStatusPending})
 }
 
+// CountURLReferences 统计引用某资源 URL 的其他主题数（排除 excludeID 自身）。
+// 壁纸（wallpaperUrl/wallpaperThumb）与图标（icons.<key>）任一字段命中即计入。
+// 删除主题时用于判断文件是否已成为孤儿（无引用才可安全删除磁盘文件）。
+func (r *ThemeRepo) CountURLReferences(ctx context.Context, url string, excludeID primitive.ObjectID) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	return r.coll.CountDocuments(ctx, bson.M{
+		"_id": bson.M{"$ne": excludeID},
+		"$or": []bson.M{
+			{"wallpaperUrl": url},
+			{"wallpaperThumb": url},
+			{"icons": bson.M{"$in": []string{url}}}, // icons 是 map，值命中即匹配
+		},
+	})
+}
+
 

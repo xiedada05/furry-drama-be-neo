@@ -224,3 +224,12 @@ func (r *UserRepo) WallpapersRemovePersonal(ctx context.Context, userID any, url
 		bson.M{"$pull": bson.M{"personalWallpapers": bson.M{"url": url}}})
 	return err
 }
+
+// PersonalWallpaperInUse 判断任意用户的个人壁纸库是否还保存着该 URL
+//（删除主题时防止误删仍被个人壁纸库引用的文件）。
+func (r *UserRepo) PersonalWallpaperInUse(ctx context.Context, url string) (bool, error) {
+	ctx, cancel := r.newCtx(ctx)
+	defer cancel()
+	n, err := r.coll.CountDocuments(ctx, bson.M{"personalWallpapers.url": url})
+	return n > 0, err
+}

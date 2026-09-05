@@ -791,7 +791,46 @@ func (h *Themes) Delete(c *gin.Context) {
 	if t.IsDefault {
 		_ = h.Repos.Themes.ClearDefaultExcept(c.Request.Context(), primitive.NilObjectID)
 	}
+	// 清理孤儿资源文件：主题删除后，其壁纸/图标文件若无任何其他引用
+	//（其他主题 / 系统壁纸库 / 任一用户的个人壁纸库）则一并删除磁盘文件，
+	// 避免删除/被拒主题的资源残留占用存储。
+	h.removeUnreferencedThemeFiles(c.Request.Context(), t, oid)
 	c.JSON(200, gin.H{"message": "已删除"})
+}
+
+// removeUnreferencedThemeFiles 删除主题资源中已无引用的磁盘文件（fire-and-forget，
+// 失败仅记录日志不阻断删除）。仅处理本地 /uploads/ 前缀文件；外链（https://）不动。
+func (h *Themes) removeUnreferencedThemeFiles(ctx context.Context, t *model.Theme, id primitive.ObjectID) {
+	urls := make([]string, 0, 2+len(t.Icons))
+	if u := strings.TrimSpace(t.WallpaperURL); u != "" {
+		urls = append(urls, u)
+	}
+	if u := strings.TrimSpace(t.WallpaperThumb); u != "" {
+		urls = append(urls, u)
+	}
+	for _, u := range t.Icons {
+		if u = strings.TrimSpace(u); u != "" {
+			urls = append(urls, u)
+		}
+	}
+	seen := make(map[string]bool, len(urls))
+	for _, url := range urls {
+		if seen[url] || !strings.HasPrefix(url, "/uploads/") {
+			continue
+		}
+		seen[url] = true
+		// 仍被其他主题 / 系统壁纸库 / 个人壁纸库引用的文件保留。
+		if n, err := h.Repos.Themes.CountURLReferences(ctx, url, id); err == nil && n > 0 {
+			continue
+		}
+		if ok, err := h.Repos.Wallpapers.ExistsByURL(ctx, url); err == nil && ok {
+			continue
+		}
+		if ok, err := h.Repos.Users.PersonalWallpaperInUse(ctx, url); err == nil && ok {
+			continue
+		}
+		_ = upload.RemoveFile(strings.TrimPrefix(url, "/uploads/"))
+	}
 }
 
 // Submit POST /api/themes/:id/submit：owner 提交个人主题审核。

@@ -140,10 +140,21 @@ func newEmailFromBody(c *gin.Context) string {
 	return "unknown"
 }
 
-// clientIP 解析客户端 IP：生产（trustXFF）优先 X-Forwarded-For 首值，
-// 否则取 RemoteAddr 去端口。
+// clientIP 解析客户端 IP：生产（trustXFF）依次优先 CF-Connecting-IP（Cloudflare
+// 注入的单值头）、X-Real-IP（nginx proxy_set_header 注入的单值头）、
+// X-Forwarded-For 首值，否则取 RemoteAddr 去端口。
+//
+// 只认 XFF 时，若反代仅设置 X-Real-IP（常见 nginx 配置）或 Cloudflare 直连回源，
+// RemoteAddr 恒为代理 IP——所有用户共享同一限流桶，表现为"限流没分 IP、误伤全员"。
+// 补充单值头兜底后三种部署（CF / nginx / 直连回源）均能取到真实客户端 IP。
 func clientIP(c *gin.Context, trustXFF bool) string {
 	if trustXFF {
+		if cf := strings.TrimSpace(c.GetHeader("CF-Connecting-IP")); cf != "" {
+			return cf
+		}
+		if xri := strings.TrimSpace(c.GetHeader("X-Real-IP")); xri != "" {
+			return xri
+		}
 		if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
 			if first := ratelimit.NormalizeXFF(xff); first != "" {
 				return first
