@@ -205,13 +205,25 @@ func (r *UserRepo) FriendLinksFindEmailTarget(ctx context.Context, id any) (*Fri
 }
 
 // WallpapersPushPersonal 向用户个人壁纸数组追加一条（对齐 wallpapers.js POST /personal 的
-// user.personalWallpapers.push(...); user.save()）。用定点 $push 而非整文档覆盖，
-// 避免加载用户时的 publicProjection 把 password 等敏感字段清空。
+// user.personalWallpapers.push(...); user.save()）。
+//
+// 注意：历史整文档写入曾把 Go 的 nil slice 序列化成显式 null 落库，$push 对 null
+// 字段会报 "must be an array"（Plan executor error）。改用 pipeline $set：
+// $ifNull 把 null/缺失归一为空数组后 $concatArrays 追加，三种状态均兼容且原子。
 func (r *UserRepo) WallpapersPushPersonal(ctx context.Context, userID any, wp model.Wallpaper) error {
 	ctx, cancel := r.newCtx(ctx)
 	defer cancel()
-	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(userID)},
-		bson.M{"$push": bson.M{"personalWallpapers": wp}})
+	update := mongo.Pipeline{
+		{{Key: "$set", Value: bson.M{
+			"personalWallpapers": bson.M{
+				"$concatArrays": bson.A{
+					bson.M{"$ifNull": bson.A{"$personalWallpapers", bson.A{}}},
+					bson.A{wp},
+				},
+			},
+		}}},
+	}
+	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": ToObjectID(userID)}, update)
 	return err
 }
 

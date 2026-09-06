@@ -307,5 +307,5 @@ func abortImageUploadError(c *gin.Context, cfg *config.Config, err error, fallba
 
 // abortWallpaperUploadError 是 abortImageUploadError 的壁纸域包装。
 func (h *Wallpapers) abortWallpaperUploadError(c *gin.Context, err error) {
-	abortImageUploadError(c, h.Config, err, "上传系统壁纸失败")
+	abortImageUploadError(c, h.Config, err, "上传壁纸失败")
 }
