@@ -566,6 +566,8 @@ func (h *Episodes) Detail(c *gin.Context) {
 			c.JSON(404, gin.H{"message": "Episode not found"})
 			return
 		}
+		// 待审核/未通过内容禁止被搜索引擎索引（对有权查看者返回时同样生效）。
+		c.Header("X-Robots-Tag", "noindex, nofollow")
 	}
 
 	singles, err := h.Repos.SingleEpisodes.FindByEpisode(ctx, oid)
@@ -1262,7 +1264,10 @@ func (h *Episodes) Resubmit(c *gin.Context) {
 }
 
 // Delete DELETE /api/episodes/:id（adminProtect）。
-// @Summary 删除剧集（含关联数据清理）
+// 删除不直接物理清除：剧集整体移入回收站（episodetrash 集合），前台即刻
+// 不可见（episodes 集合中已移除）；管理员可在后台回收站恢复或彻底删除
+// （彻底删除时才清理单集/版本/追番等关联数据，释放服务器资源）。
+// @Summary 删除剧集（移入回收站）
 // @Tags 剧集
 // @Security bearerAuth
 // @Param id path string true "剧集 ID"
@@ -1276,7 +1281,8 @@ func (h *Episodes) Delete(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if _, err := h.Repos.Episodes.FindByID(ctx, oid); err != nil {
+	episode, err := h.Repos.Episodes.FindByID(ctx, oid)
+	if err != nil {
 		if repository.IsNotFound(err) {
 			c.JSON(404, gin.H{"message": "Episode not found"})
 			return
@@ -1284,36 +1290,8 @@ func (h *Episodes) Delete(c *gin.Context) {
 		serverError(c)
 		return
 	}
-	if err := h.Repos.Episodes.DeleteByID(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	// 完整清理关联数据，避免残留孤儿记录。
-	if err := h.Repos.SingleEpisodes.DeleteByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.EpisodeVersions.DeleteByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.Follows.EpisodesDeleteManyByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.Favorites.EpisodesDeleteManyByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.Histories.EpisodesDeleteManyByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.Ratings.EpisodesDeleteManyByEpisode(ctx, oid); err != nil {
-		serverError(c)
-		return
-	}
-	if err := h.Repos.Notifications.EpisodesDeleteManyByEpisode(ctx, oid); err != nil {
+	user, _ := middleware.GetUser(c)
+	if err := h.Repos.EpisodeTrash.MoveToTrash(ctx, episode, "deleted", "", &user.ID); err != nil {
 		serverError(c)
 		return
 	}

@@ -459,7 +459,8 @@ func TestEpisodesResubmitAndDelete(t *testing.T) {
 		t.Fatalf("resubmit non-rejected: %d", resp.StatusCode)
 	}
 
-	// 管理员删除 → 清理关联。
+	// 管理员删除 → 整体移入回收站（前台即刻不可见；关联数据保留，
+	// 供回收站恢复；彻底删除时才清理）。
 	if err := repos.SingleEpisodes.Create(t.Context(), &model.SingleEpisode{
 		EpisodeID: episodeOID, EpisodeNumber: 1, Title: "s",
 	}); err != nil {
@@ -477,18 +478,43 @@ func TestEpisodesResubmitAndDelete(t *testing.T) {
 	if resp.StatusCode != 200 || del["message"] != "Episode deleted" {
 		t.Fatalf("delete: %d %v", resp.StatusCode, del)
 	}
+	// episodes 集合中已移除 → 详情 404。
+	if _, err := repos.Episodes.FindByID(t.Context(), episodeOID); !repository.IsNotFound(err) {
+		t.Fatalf("episode still in episodes: %v", err)
+	}
+	// 回收站中可查到（原因 deleted）。
+	trashed, err := repos.EpisodeTrash.FindByID(t.Context(), episodeOID)
+	if err != nil {
+		t.Fatalf("not in trash: %v", err)
+	}
+	if trashed.TrashReason != "deleted" {
+		t.Fatalf("trash reason: %s", trashed.TrashReason)
+	}
+	// 关联数据保留（回收站恢复语义）。
 	singles, _ := repos.SingleEpisodes.FindByEpisode(t.Context(), episodeOID)
-	if len(singles) != 0 {
-		t.Fatalf("singles not cleaned: %d", len(singles))
+	if len(singles) != 1 {
+		t.Fatalf("singles not preserved: %d", len(singles))
 	}
 	follows, _ := repos.Follows.EpisodesFindByEpisode(t.Context(), episodeOID)
-	if len(follows) != 0 {
-		t.Fatalf("follows not cleaned: %d", len(follows))
+	if len(follows) != 1 {
+		t.Fatalf("follows not preserved: %d", len(follows))
 	}
 	// 不存在再删 → 404。
 	resp = admin.json("DELETE", "/api/episodes/"+episodeID, nil, &del)
 	if resp.StatusCode != 404 {
 		t.Fatalf("delete missing: %d", resp.StatusCode)
+	}
+	// 彻底删除回收站条目 → 关联数据被清理。
+	if _, err := repos.EpisodeTrash.Purge(t.Context(), episodeOID); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	singles, _ = repos.SingleEpisodes.FindByEpisode(t.Context(), episodeOID)
+	if len(singles) != 0 {
+		t.Fatalf("singles not purged: %d", len(singles))
+	}
+	follows, _ = repos.Follows.EpisodesFindByEpisode(t.Context(), episodeOID)
+	if len(follows) != 0 {
+		t.Fatalf("follows not purged: %d", len(follows))
 	}
 }
 

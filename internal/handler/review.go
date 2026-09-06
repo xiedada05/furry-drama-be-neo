@@ -280,7 +280,9 @@ func (h *Review) Reject(c *gin.Context) {
 		return
 	}
 
-	// 新提交的 pending 剧集被拒绝。
+	// 新提交的 pending 剧集被拒绝：标记审核结果后整体移入回收站，
+	// 不再保留未通过的剧集页面（前台/个人列表即刻不可见）；
+	// 管理员可在后台回收站查看日志、恢复或彻底删除。
 	updated, err := h.Repos.Episodes.FindOneAndUpdate(ctx, oid, bson.M{"$set": bson.M{
 		"reviewStatus": "rejected",
 		"reviewNote":   note,
@@ -288,6 +290,10 @@ func (h *Review) Reject(c *gin.Context) {
 		"reviewedAt":   time.Now().UTC().Truncate(time.Millisecond),
 	}})
 	if err != nil {
+		serverError(c)
+		return
+	}
+	if err := h.Repos.EpisodeTrash.MoveToTrash(ctx, updated, "rejected", note, &admin.ID); err != nil {
 		serverError(c)
 		return
 	}

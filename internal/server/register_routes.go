@@ -141,6 +141,10 @@ func RegisterRoutes(d Deps, api *gin.RouterGroup, opts middleware.RateLimitOpts)
 	rv := handler.NewReview(d.Repos, d.Config, amw, rl, mail)
 	router.MountDual(api, "/review", rv.Register)
 
+	// ---- 剧集回收站域（删除/审核拒绝的剧集移入此处，仅 admin/superadmin）----
+	et := handler.NewEpisodeTrash(d.Repos, amw)
+	router.MountDual(api, "/episode-trash", et.Register)
+
 	// ---- 分类 / 轮播图 / 后台自动任务 / 版本历史域 ----
 	cat := handler.NewCategories(d.Repos, d.Config, amw, rl)
 	router.MountDual(api, "/categories", cat.Register)

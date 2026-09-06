@@ -30,6 +30,7 @@ type Repos struct {
 	Feedbacks       *FeedbackRepo
 	CreatorProfiles *CreatorProfileRepo
 	Episodes        *EpisodeRepo
+	EpisodeTrash    *EpisodeTrashRepo
 	SingleEpisodes  *SingleEpisodeRepo
 	EpisodeVersions *EpisodeVersionRepo
 	Folders         *FolderRepo
@@ -64,6 +65,11 @@ func NewRepos(db *mongo.Database, loginMaxAttempts, loginLockMinutes int) *Repos
 		Feedbacks:       NewFeedbackRepo(db.Collection("feedbacks")),
 		CreatorProfiles: NewCreatorProfileRepo(db.Collection("creatorprofiles")),
 		Episodes:        NewEpisodeRepo(db.Collection("episodes")),
+		EpisodeTrash:    NewEpisodeTrashRepo(db,
+			db.Collection("episodes"), db.Collection("episodeversions"),
+			db.Collection("singleepisodes"), db.Collection("follows"),
+			db.Collection("favorites"), db.Collection("histories"),
+			db.Collection("ratings"), db.Collection("notifications")),
 		SingleEpisodes:  NewSingleEpisodeRepo(db.Collection("singleepisodes")),
 		EpisodeVersions: NewEpisodeVersionRepo(db.Collection("episodeversions")),
 		Folders:         NewFolderRepo(db.Collection("folders")),

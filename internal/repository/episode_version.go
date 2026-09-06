@@ -73,6 +73,23 @@ func (r *EpisodeVersionRepo) FindOldestN(ctx context.Context, episodeID any, n i
 	return list, nil
 }
 
+// FindAllByEpisode 查某剧集全部版本（version 倒序；回收站日志查看用）。
+func (r *EpisodeVersionRepo) FindAllByEpisode(ctx context.Context, episodeID any) ([]model.EpisodeVersion, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextTimeout)
+	defer cancel()
+	cur, err := r.coll.Find(ctx, bson.M{"episodeId": ToObjectID(episodeID)},
+		options.Find().SetSort(bson.D{{Key: "version", Value: -1}}))
+	if err != nil {
+		return nil, err
+	}
+	defer cur.Close(ctx)
+	var list []model.EpisodeVersion
+	if err := cur.All(ctx, &list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
 // DeleteManyByIDs 批量删除版本（对齐 deleteMany({_id:{$in:[...]}})）。
 func (r *EpisodeVersionRepo) DeleteManyByIDs(ctx context.Context, ids []any) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, contextTimeout)

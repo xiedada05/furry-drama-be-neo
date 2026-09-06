@@ -137,6 +137,22 @@ type SingleEpisode struct {
 	VersionKey int `bson:"__v,omitempty" json:"__v"`
 }
 
+// EpisodeTrash 剧集回收站文档（collection: episodetrash）。
+// 被删除或审核拒绝的剧集整体移入本集合（内嵌原 Episode 文档），不再保留在
+// episodes 集合中，因此所有公开/个人查询天然不可见；管理员可在后台回收站
+// 查看日志并恢复（Restore 移回 episodes，保留 _id 与版本记录）或彻底删除。
+type EpisodeTrash struct {
+	Episode Episode `bson:",inline"`
+	// TrashReason 进入回收站的原因：rejected（审核拒绝）/ deleted（用户删除）。
+	TrashReason string `bson:"trashReason" json:"trashReason"`
+	// TrashNote 进入回收站时的备注（审核驳回原因 / 删除说明）。
+	TrashNote string `bson:"trashNote" json:"trashNote"`
+	// TrashBy 操作人（审核管理员 / 删除者）。
+	TrashBy *primitive.ObjectID `bson:"trashBy" json:"trashBy"`
+	// TrashAt 进入回收站时间。
+	TrashAt time.Time `bson:"trashAt" json:"trashAt"`
+}
+
 // EpisodeVersion 剧集版本快照（models/EpisodeVersion.js，episodeId+version 唯一）。
 type EpisodeVersion struct {
 	ID            primitive.ObjectID  `bson:"_id,omitempty" json:"_id"`
